@@ -6,6 +6,10 @@ export const WINDOWS = { '24H': 86400, '1W': 7 * 86400, '1M': 30 * 86400 };
 // Per-block details for the grid's hover card are published in files of this many blocks, so a
 // visitor only downloads the part they point at and no file grows without limit.
 export const CHUNK_SIZE = 4096;
+// chain.e holds, per block, the fees the instance's own projected block would have collected
+// (its block audit). Two negative values stand for "no figure":
+export const NOT_FETCHED = -1; // stored before this column existed; the job fills these in over later runs
+export const NO_AUDIT = -2; // asked, and the instance has no audit for this block
 
 export function subsidy(height) {
   const halvings = Math.floor(height / 210000);
@@ -13,7 +17,7 @@ export function subsidy(height) {
 }
 
 export function emptyChain(start, fingerprint) {
-  return { start, fingerprint, t: [], p: [], x: [], pools: [], auto: new Map(), ids: new Map(), price: null };
+  return { start, fingerprint, t: [], p: [], x: [], e: [], pools: [], auto: new Map(), ids: new Map(), price: null };
 }
 
 export function chainTip(chain) {
@@ -33,6 +37,7 @@ export function appendBlock(chain, block, detected) {
   chain.t.push(block.timestamp);
   chain.p.push(poolIndex);
   chain.x.push(block.reward - subsidy(block.height)); // fees claimed; small numbers keep the file compact
+  chain.e.push(Number.isSafeInteger(block.expectedFees) && block.expectedFees >= 0 ? block.expectedFees : NO_AUDIT);
   if (detected) {
     chain.auto.set(block.height, detected);
     chain.ids.set(block.height, block.id);
@@ -45,6 +50,7 @@ export function truncateChain(chain, length) {
   chain.t.length = keep;
   chain.p.length = keep;
   chain.x.length = keep;
+  chain.e.length = keep;
   const limit = chain.start + keep;
   for (const height of [...chain.auto.keys()]) if (height >= limit) chain.auto.delete(height);
   for (const height of [...chain.ids.keys()]) if (height >= limit) chain.ids.delete(height);
@@ -80,6 +86,28 @@ export function rangeStarts(chain, now) {
   return { ...result, tip };
 }
 
+const median = (sorted) => (sorted.length === 0 ? null : sorted.length % 2 ? sorted[(sorted.length - 1) / 2] : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2);
+
+/**
+ * For each time range: how much of the available fees the blocks that are NOT Stratum V2 collected
+ * (median of fees / expected fees). The page compares the Stratum V2 blocks against this.
+ */
+export function captureBaseline(chain, ranges, sv2Heights) {
+  const skip = new Set(sv2Heights);
+  const result = {};
+  for (const [name, first] of Object.entries(ranges)) {
+    const ratios = [];
+    for (let index = Math.max(0, first - chain.start); index < chain.t.length; index++) {
+      const expected = chain.e[index];
+      if (expected > 0 && !skip.has(chain.start + index)) ratios.push(chain.x[index] / expected);
+    }
+    ratios.sort((a, b) => a - b);
+    const middle = median(ratios);
+    result[name] = { n: ratios.length, median: middle === null ? null : Math.round(middle * 1e5) / 1e5 };
+  }
+  return result;
+}
+
 export function buildSummary(chain, overrides, { now, synced }) {
   const { tip, ...ranges } = rangeStarts(chain, now);
   const sv2 = sv2Blocks(chain, overrides).map(({ height, reason, tag }) => {
@@ -94,9 +122,12 @@ export function buildSummary(chain, overrides, { now, synced }) {
       reward: chain.x[index] + subsidy(height),
       reason,
       tag,
+      // Fees that were available when the block arrived; left out when the instance has no figure.
+      ...(chain.e[index] > 0 ? { exp: chain.e[index] } : {}),
     };
   });
-  return { v: FORMAT, updatedAt: now, start: chain.start, tip, synced, chunkSize: CHUNK_SIZE, price: chain.price, ranges, sv2 };
+  const capture = captureBaseline(chain, ranges, sv2.map((block) => block.h));
+  return { v: FORMAT, updatedAt: now, start: chain.start, tip, synced, chunkSize: CHUNK_SIZE, price: chain.price, ranges, capture, sv2 };
 }
 
 export function encodeChain(chain, overrides) {
@@ -111,6 +142,7 @@ export function encodeChain(chain, overrides) {
     t: deltas,
     p: chain.p,
     x: chain.x,
+    e: chain.e,
     s: sv2Blocks(chain, overrides).map(({ height }) => height - chain.start),
     auto: Object.fromEntries(chain.auto),
     ids: Object.fromEntries(chain.ids),
@@ -147,7 +179,7 @@ const isIntArray = (value, length) => Array.isArray(value) && value.length === l
 
 export function decodeChain(json) {
   if (json === null || typeof json !== 'object' || json.v !== FORMAT) throw new Error('unknown chain.json format');
-  const { start, fingerprint, count, pools, t, p, x } = json;
+  const { start, fingerprint, count, pools, t, p, x, e } = json;
   if (!Number.isInteger(start) || !Number.isInteger(count) || count < 0) throw new Error('chain.json: bad start or count');
   if (!isIntArray(t, count) || !isIntArray(p, count) || !isIntArray(x, count)) throw new Error('chain.json: column lengths do not match count');
   if (!Array.isArray(pools) || pools.some((pool) => typeof pool?.slug !== 'string' || typeof pool?.name !== 'string')) throw new Error('chain.json: bad pools');
@@ -162,6 +194,8 @@ export function decodeChain(json) {
   chain.t = times;
   chain.p = [...p];
   chain.x = [...x];
+  // Files written before the expected-fees column existed simply lack it.
+  chain.e = isIntArray(e, count) ? e.map((value) => (value >= 0 || value === NO_AUDIT ? value : NOT_FETCHED)) : new Array(count).fill(NOT_FETCHED);
   chain.pools = pools.map((pool) => ({ slug: pool.slug, name: pool.name }));
   const inRange = (height) => Number.isInteger(height) && height >= start && height < start + count;
   for (const [key, detected] of Object.entries(json.auto ?? {})) {

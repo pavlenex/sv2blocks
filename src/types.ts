@@ -22,6 +22,14 @@ export interface Sv2Block {
   reward: number;
   reason: string;
   tag: string;
+  /** Fees that were available when the block arrived, in satoshis. 0 when the data has no figure. */
+  exp: number;
+}
+
+/** How much of the available fees a group of blocks collected: the median of fees / expected fees. */
+export interface Capture {
+  n: number;
+  median: number | null;
 }
 
 export interface Price {
@@ -39,6 +47,8 @@ export interface Summary {
   chunkSize: number;
   price: Price | null;
   ranges: Record<RangeKey, number>;
+  /** Fee capture of the blocks that are not Stratum V2, per range. */
+  capture: Record<RangeKey, Capture>;
   sv2: Sv2Block[];
 }
 

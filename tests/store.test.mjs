@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { CHUNK_SIZE, appendBlock, buildSummary, chunkCount, decodeChain, emptyChain, encodeChain, encodeChunk, rangeStarts, subsidy, sv2Blocks, truncateChain } from '../scripts/lib/store.mjs';
+import { CHUNK_SIZE, NOT_FETCHED, NO_AUDIT, appendBlock, buildSummary, captureBaseline, chunkCount, decodeChain, emptyChain, encodeChain, encodeChunk, rangeStarts, subsidy, sv2Blocks, truncateChain } from '../scripts/lib/store.mjs';
 
 const id = (n) => n.toString(16).padStart(64, '0');
 function sampleChain() {
@@ -73,6 +73,30 @@ test('chunks cover every block exactly once and carry their own pool names', () 
     });
   }
   assert.equal(buildSummary(chain, { include: [], exclude: [] }, { now: 1, synced: true }).chunkSize, CHUNK_SIZE);
+});
+
+test('expected fees: old files load as not fetched, and the summary compares Stratum V2 with the rest', () => {
+  const chain = emptyChain(1000, 'abc');
+  for (let i = 0; i < 6; i++) {
+    // fees are 1000 for every block; block 3 is Stratum V2 and block 5 has no audit
+    const expectedFees = [1250, 1000, 2000, 1001, 1000, null][i];
+    const block = { height: 1000 + i, id: id(i), timestamp: 5000 + i * 600, reward: subsidy(1000 + i) + 1000, expectedFees, poolSlug: 'a', poolName: 'Pool A' };
+    appendBlock(chain, block, i === 3 ? { reason: 'tag', tag: '/sv2/' } : null);
+  }
+  assert.deepEqual(chain.e, [1250, 1000, 2000, 1001, 1000, NO_AUDIT]);
+  const encoded = JSON.parse(JSON.stringify(encodeChain(chain, { include: [], exclude: [] })));
+  assert.deepEqual(decodeChain(encoded).e, chain.e);
+  const { e, ...older } = encoded;
+  assert.deepEqual(decodeChain(older).e, new Array(6).fill(NOT_FETCHED));
+  assert.deepEqual(decodeChain({ ...encoded, e: [1, 2] }).e, new Array(6).fill(NOT_FETCHED));
+
+  const summary = buildSummary(chain, { include: [], exclude: [] }, { now: 5000 + 5 * 600, synced: true });
+  assert.equal(summary.sv2[0].exp, 1001);
+  // other blocks with a figure: 1000/1250, 1000/1000, 1000/2000, 1000/1000 -> median 0.9
+  assert.deepEqual(summary.capture.ALL, { n: 4, median: 0.9 });
+  assert.deepEqual(captureBaseline(chain, { none: 1006 }, []).none, { n: 0, median: null });
+  truncateChain(chain, 2);
+  assert.equal(chain.e.length, 2);
 });
 
 test('time windows count back from now', () => {

@@ -52,6 +52,8 @@ export function validateConfig(raw) {
   const timeoutMs = Number(mempool.timeoutMs ?? 20000);
   if (!(requestDelayMs >= 0 && requestDelayMs <= 60000)) fail('"mempool.requestDelayMs" must be 0 to 60000');
   if (!(timeoutMs >= 1000 && timeoutMs <= 120000)) fail('"mempool.timeoutMs" must be 1000 to 120000');
+  const backfillPagesPerRun = Number(mempool.backfillPagesPerRun ?? 40);
+  if (!(Number.isInteger(backfillPagesPerRun) && backfillPagesPerRun >= 0 && backfillPagesPerRun <= 2000)) fail('"mempool.backfillPagesPerRun" must be a whole number from 0 to 2000');
 
   if (!isObject(price) || !isObject(price.sources)) fail('"price.sources" is missing');
   if (typeof price.source !== 'string' || !isObject(price.sources[price.source])) {
@@ -111,6 +113,7 @@ export function validateConfig(raw) {
       blockUrlByHeight: mempool.blockUrlByHeight,
       requestDelayMs,
       timeoutMs,
+      backfillPagesPerRun,
     },
     price: { source: price.source, sources: price.sources },
     detection: {
@@ -131,6 +134,9 @@ export function applyEnv(raw, env = process.env) {
   if (env.SV2_PRICE_SOURCE) next.price = { ...next.price, source: env.SV2_PRICE_SOURCE };
   if (env.SV2_REQUEST_DELAY_MS !== undefined && env.SV2_REQUEST_DELAY_MS !== '') {
     next.mempool = { ...next.mempool, requestDelayMs: Number(env.SV2_REQUEST_DELAY_MS) };
+  }
+  if (env.SV2_BACKFILL_PAGES !== undefined && env.SV2_BACKFILL_PAGES !== '') {
+    next.mempool = { ...next.mempool, backfillPagesPerRun: Number(env.SV2_BACKFILL_PAGES) };
   }
   return next;
 }

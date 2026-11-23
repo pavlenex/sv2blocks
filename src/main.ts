@@ -2,7 +2,7 @@ import '@fontsource-variable/inter/wght.css';
 import '@fontsource-variable/jetbrains-mono/wght.css';
 import './styles.css';
 import { createChart } from './chart';
-import { loadChunk, loadSummary, parseSummary } from './data';
+import { loadChunk, loadSummary, parseSummary, subsidy } from './data';
 import { fmtAgo, fmtBtc, fmtClock, fmtDay, fmtInt, fmtPercent, fmtUsd } from './format';
 import { createGrid, type GridSource } from './grid';
 import type { BlockChunk, BlockInfo, RangeKey, Summary, Sv2Block, Theme, Unit } from './types';
@@ -258,6 +258,41 @@ function gridSource(data: Summary, inRange: Sv2Block[], rangeStart: number): Gri
   };
 }
 
+const middle = (values: number[]) => {
+  const sorted = [...values].sort((a, b) => a - b);
+  const half = sorted.length >> 1;
+  return sorted.length === 0 ? null : sorted.length % 2 ? (sorted[half] ?? null) : ((sorted[half - 1] ?? 0) + (sorted[half] ?? 0)) / 2;
+};
+
+/** Fees collected against fees on offer: the Stratum V2 blocks in range beside every other block. */
+function renderCapture(data: Summary, inRange: Sv2Block[], words: string) {
+  const other = data.capture[state.range];
+  // An instance that does not audit blocks has no figures at all; the tile then has nothing to say.
+  const tracked = data.sv2.some((block) => block.exp > 0) || data.capture.ALL.n > 0;
+  $('capture').hidden = !tracked;
+  if (!tracked) return;
+  const ratios = inRange.filter((block) => block.exp > 0).map((block) => Math.max(0, block.reward - subsidy(block.h)) / block.exp);
+  const sv2 = middle(ratios);
+  const percent = (value: number) => `${(value * 100).toFixed(2)}%`;
+  const show = (id: string, value: number | null) => {
+    $(id).textContent = value === null ? '–' : percent(value);
+    $(`${id}-bar`).style.width = `${Math.min(100, Math.max(0, (value ?? 0) * 100))}%`;
+  };
+  if (sv2 === null) {
+    const value = $('capture-value');
+    cancelAnimationFrame(tweens.get(value) ?? 0);
+    delete value.dataset.value;
+    value.textContent = '–';
+  } else {
+    tweenNumber($('capture-value'), sv2 * 100, (value) => `${value.toFixed(2)}%`);
+  }
+  show('capture-sv2', sv2);
+  show('capture-other', other.median);
+  const blocks = (count: number, kind: string) => `${fmtInt(count)} ${kind} ${count === 1 ? 'block' : 'blocks'}`;
+  $('capture-count').textContent = `${blocks(ratios.length, 'Stratum V2')} and ${blocks(other.n, 'other')}, ${words}`;
+  $('capture-help').hidden = false;
+}
+
 function renderLatest(data: Summary) {
   const latest = data.sv2[data.sv2.length - 1];
   const latestLink = $<HTMLAnchorElement>('latest-height');
@@ -369,6 +404,7 @@ function render() {
   renderLeaderboard(data, inRange);
 
   renderLatest(data);
+  renderCapture(data, inRange, words);
 
   const share = fmtPercent(delta, blocksInRange);
   tweenNumber($('share'), blocksInRange > 0 ? (delta / blocksInRange) * 100 : 0, (value) => (blocksInRange > 0 ? `${value.toFixed(2)}%` : '0%'));

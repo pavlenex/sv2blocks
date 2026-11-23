@@ -5,6 +5,7 @@
 //
 //   npm run data:update              incremental (first run backfills from detection.startHeight)
 //   npm run data:update -- --rescan  ignore stored blocks and fetch everything again
+//   npm run data:update -- --backfill-all   fill in every missing expected-fees figure in one go
 //
 // Environment:
 //   SV2_MEMPOOL_API         overrides mempool.apiBase
@@ -14,9 +15,12 @@
 //   SV2_PREVIOUS_DATA_URL   site URL to download the previous data from when none is on disk
 //   SV2_MAX_RUNTIME_SEC     stop fetching after this long and save progress (default 1500)
 //   SV2_RESCAN              "true" does the same as --rescan (used by the deploy workflow)
+//   SV2_BACKFILL_PAGES      overrides mempool.backfillPagesPerRun
 //
 // API use: a normal run makes about four requests (tip, one or two pages of blocks, price). Only a
 // first run or a rescan fetches everything, about 1,500 requests spaced mempool.requestDelayMs apart.
+// Blocks stored before the job recorded expected fees are filled in a little per run
+// (mempool.backfillPagesPerRun requests, Stratum V2 blocks first, then newest first) until none are left.
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -24,7 +28,7 @@ import { ROOT, loadConfig, loadOverrides } from './lib/config.mjs';
 import { autoDetect, compilePatterns, detectionFingerprint } from './lib/detect.mjs';
 import { HttpError, PAGE_SIZE, createClient, fetchWithRetry } from './lib/mempool.mjs';
 import { fetchPrice } from './lib/price.mjs';
-import { appendBlock, buildSummary, chunkCount, chainTip, decodeChain, emptyChain, encodeChain, encodeChunk, truncateChain } from './lib/store.mjs';
+import { NOT_FETCHED, NO_AUDIT, appendBlock, buildSummary, chunkCount, chainTip, decodeChain, emptyChain, encodeChain, encodeChunk, sv2Blocks, truncateChain } from './lib/store.mjs';
 
 const REORG_DEPTH = PAGE_SIZE; // the newest blocks are always fetched again
 const CHECKPOINT_PAGES = 100;
@@ -95,6 +99,40 @@ async function readPrevious(dataDir, previousUrl, timeoutMs) {
     }
   }
   return reachable ? null : UNREACHABLE;
+}
+
+/**
+ * Fills in expected fees for blocks stored before that figure was recorded, at most `maxPages`
+ * requests per run so a shared public API is never asked for everything at once.
+ */
+async function backfillExpectedFees({ chain, overrides, client, maxPages, delay, outOfTime }) {
+  const missing = (height) => chain.e[height - chain.start] === NOT_FETCHED;
+  function* wanted() {
+    for (const { height } of sv2Blocks(chain, overrides).reverse()) yield height; // what the page shows first
+    for (let height = chainTip(chain); height >= chain.start; height--) yield height;
+  }
+  let pages = 0;
+  try {
+    for (const height of wanted()) {
+      if (!missing(height)) continue;
+      if (pages >= maxPages || outOfTime()) break;
+      await sleep(delay());
+      const page = await client.blocksEndingAt(height);
+      pages++;
+      for (const [pageHeight, block] of page) {
+        const index = pageHeight - chain.start;
+        if (index < 0 || index >= chain.t.length || chain.e[index] !== NOT_FETCHED) continue;
+        // Only trust the figure if this is the block we stored (a reorg would have changed its time).
+        chain.e[index] = block.timestamp === chain.t[index] && block.expectedFees !== null ? block.expectedFees : NO_AUDIT;
+      }
+      if (missing(height)) chain.e[height - chain.start] = NO_AUDIT; // never ask for the same block forever
+    }
+  } catch (error) {
+    log(`Expected-fees backfill paused (${error.message}); the next run continues.`);
+  }
+  const left = chain.e.reduce((count, value) => count + (value === NOT_FETCHED ? 1 : 0), 0);
+  if (pages > 0) log(`Filled in expected fees with ${pages} request${pages === 1 ? '' : 's'}; ${left} block${left === 1 ? '' : 's'} still to go.`);
+  return pages;
 }
 
 export async function updateData({ argv = process.argv.slice(2), env = process.env, now = () => Math.floor(Date.now() / 1000) } = {}) {
@@ -190,6 +228,17 @@ export async function updateData({ argv = process.argv.slice(2), env = process.e
     if (height < chain.start || height > chainTip(chain) || chain.ids.has(height)) continue;
     const block = (await client.blocksEndingAt(height)).get(height);
     if (block) chain.ids.set(height, block.id);
+  }
+
+  if (synced) {
+    await backfillExpectedFees({
+      chain,
+      overrides,
+      client,
+      maxPages: argv.includes('--backfill-all') ? Infinity : config.mempool.backfillPagesPerRun,
+      delay: () => delayMs,
+      outOfTime: () => Date.now() - started > maxRuntimeMs,
+    });
   }
 
   try {

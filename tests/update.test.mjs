@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
@@ -217,6 +217,59 @@ test('stops at the time budget and continues next run', async () => {
     assert.equal(done.synced, true);
     assert.equal(done.tip, api.state.tip);
   } finally {
+    await rm(fresh, { recursive: true, force: true });
+  }
+});
+
+test('fills in expected fees for older data a few requests per run, Stratum V2 blocks first', async () => {
+  const fresh = await mkdtemp(path.join(os.tmpdir(), 'sv2blocks-audit-'));
+  const quiet = createFakeApi({ start: START, tip: START + 400, sv2Rate: (f) => (f < 0.5 ? 0.03 : 0) });
+  const quietOrigin = await quiet.listen();
+  const local = (extra = {}) => env({ SV2_MEMPOOL_API: `${quietOrigin}/api`, SV2_DATA_DIR: fresh, ...extra });
+  const chainFile = path.join(fresh, 'chain.json');
+  try {
+    const first = await silently(() => updateData({ argv: [], env: local() }));
+    assert.ok(first.sv2.length >= 3 && first.sv2.every((block) => block.exp > 0), 'new blocks carry the figure straight away');
+    assert.equal(first.capture.ALL.n, 401 - first.sv2.length);
+    assert.ok(first.capture.ALL.median > 0.9 && first.capture.ALL.median < 1);
+
+    // A file written before the column existed.
+    const { e, ...older } = JSON.parse(await readFile(chainFile, 'utf8'));
+    await writeFile(chainFile, JSON.stringify(older));
+    quiet.state.requests = 0;
+    const second = await silently(() => updateData({ argv: [], env: local({ SV2_BACKFILL_PAGES: '3' }) }));
+    assert.ok(quiet.state.requests <= 8, `expected a handful of requests, saw ${quiet.state.requests}`);
+    const newest = second.sv2.slice(-3);
+    assert.ok(newest.every((block) => block.exp > 0), 'the newest Stratum V2 blocks are filled in first');
+    const partial = JSON.parse(await readFile(chainFile, 'utf8')).e;
+    assert.ok(partial.includes(-1) && partial.some((value) => value > 0));
+
+    const third = await silently(() => updateData({ argv: ['--backfill-all'], env: local({ SV2_BACKFILL_PAGES: '0' }) }));
+    assert.ok(!JSON.parse(await readFile(chainFile, 'utf8')).e.includes(-1));
+    assert.deepEqual(third.sv2.map((block) => block.exp), first.sv2.map((block) => block.exp));
+    assert.deepEqual(third.capture.ALL, first.capture.ALL);
+    quiet.state.requests = 0;
+    await silently(() => updateData({ argv: [], env: local() }));
+    assert.ok(quiet.state.requests <= 5, 'nothing left to fill in');
+  } finally {
+    await quiet.close();
+    await rm(fresh, { recursive: true, force: true });
+  }
+});
+
+test('an instance without block audits simply has no expected fees', async () => {
+  const fresh = await mkdtemp(path.join(os.tmpdir(), 'sv2blocks-noaudit-'));
+  const plain = createFakeApi({ start: START, tip: START + 40, sv2Rate: () => 0.2, audits: false });
+  const plainOrigin = await plain.listen();
+  try {
+    const summary = await silently(() => updateData({ argv: [], env: env({ SV2_MEMPOOL_API: `${plainOrigin}/api`, SV2_DATA_DIR: fresh }) }));
+    assert.ok(summary.sv2.length > 0 && summary.sv2.every((block) => !('exp' in block)));
+    assert.deepEqual(summary.capture.ALL, { n: 0, median: null });
+    plain.state.requests = 0;
+    await silently(() => updateData({ argv: [], env: env({ SV2_MEMPOOL_API: `${plainOrigin}/api`, SV2_DATA_DIR: fresh }) }));
+    assert.ok(plain.state.requests <= 5, 'does not keep asking for figures that do not exist');
+  } finally {
+    await plain.close();
     await rm(fresh, { recursive: true, force: true });
   }
 });

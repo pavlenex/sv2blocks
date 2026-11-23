@@ -13,7 +13,7 @@ const toHex = (text) => Buffer.from(text, 'latin1').toString('hex');
 const unit = (seed) => createHash('sha256').update(seed).digest().readUInt32BE(0) / 2 ** 32;
 const slugOf = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
-export function createFakeApi({ start, tip, tipTime = Math.floor(Date.now() / 1000) - 300, priceUsd = 98765.43, sv2Rate = (f) => 0.002 + 0.03 * f * f }) {
+export function createFakeApi({ start, tip, tipTime = Math.floor(Date.now() / 1000) - 300, priceUsd = 98765.43, sv2Rate = (f) => 0.002 + 0.03 * f * f, audits = true }) {
   const state = { tip, salt: new Map(), requests: 0, priceStatus: 200, priceUsd, files: new Map(), statuses: new Map(), rateLimitNext: 0, failBlocksAbove: Infinity, userAgents: new Set() };
 
   function block(height) {
@@ -34,6 +34,8 @@ export function createFakeApi({ start, tip, tipTime = Math.floor(Date.now() / 10
       coinbase = toHex(`/${poolName}/`) + '00c3d4e5';
     }
     const fees = 200000 + Math.floor(unit(`fees:${height}`) * 4800000);
+    // Invented audit: Stratum V2 blocks collect nearly everything on offer, the rest a little less.
+    const captured = isSv2 || height === start ? 0.996 + 0.005 * unit(`audit:${height}`) : 0.93 + 0.075 * Math.sqrt(unit(`audit:${height}`));
     return {
       id: createHash('sha256').update(`block:${height}:${salt}`).digest('hex'),
       height,
@@ -42,6 +44,7 @@ export function createFakeApi({ start, tip, tipTime = Math.floor(Date.now() / 10
       extras: {
         reward: subsidy(height) + fees,
         totalFees: fees,
+        ...(audits ? { expectedFees: Math.round(fees / captured), matchRate: 100 } : {}),
         coinbaseRaw: `03${height.toString(16).padStart(6, '0')}${coinbase}`,
         pool: { id: 1, name: poolName, slug: slugOf(poolName) },
       },

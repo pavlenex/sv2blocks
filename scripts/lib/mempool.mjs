@@ -71,12 +71,16 @@ export function parseBlock(raw) {
   if (!Number.isSafeInteger(reward) || reward < 0) throw new Error(`block ${height} has no valid reward`);
   const pool = extras.pool && typeof extras.pool === 'object' ? extras.pool : {};
   const slug = cleanText(pool.slug, 48).toLowerCase();
+  // What this instance's own projected block would have collected when the block arrived. Not every
+  // instance audits blocks, so this may be absent.
+  const expected = Number(extras.expectedFees);
   const coinbaseRaw = typeof extras.coinbaseRaw === 'string' && /^[0-9a-f]*$/i.test(extras.coinbaseRaw) ? extras.coinbaseRaw.slice(0, 400) : '';
   return {
     height,
     id,
     timestamp,
     reward,
+    expectedFees: extras.expectedFees != null && Number.isFinite(expected) && expected >= 0 && expected <= Number.MAX_SAFE_INTEGER ? Math.round(expected) : null,
     poolSlug: /^[a-z0-9_-]+$/.test(slug) ? slug : 'unknown',
     poolName: cleanText(pool.name, 48) || 'Unknown',
     coinbaseRaw,

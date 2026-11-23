@@ -10,7 +10,8 @@
     "blockUrlByHash": "https://mempool.space/block/{hash}",
     "blockUrlByHeight": "https://mempool.space/block/{height}",
     "requestDelayMs": 500,
-    "timeoutMs": 20000
+    "timeoutMs": 20000,
+    "backfillPagesPerRun": 40
   },
   "price": {
     "source": "mempool",

@@ -85,6 +85,34 @@
             </div>
           </section>
 
+          <section class="card glass tile capture" id="capture" aria-labelledby="capture-title">
+            <div class="capture-stat">
+              <div class="metric-heading">
+                <h2 class="tile-label" id="capture-title">Fees captured</h2>
+                <details class="metric-help" id="capture-help" hidden>
+                  <summary aria-label="What fees captured means"><span aria-hidden="true">i</span></summary>
+                  <div class="metric-help-panel">
+                    <p>Fees a block collected, as a share of the fees on offer when it was mined. Median per block.</p>
+                    <p id="capture-count"></p>
+                  </div>
+                </details>
+              </div>
+              <p class="tile-number" id="capture-value">–</p>
+            </div>
+            <dl class="meters">
+              <div class="meter sv2">
+                <dt class="meter-name">Stratum V2</dt>
+                <dd class="meter-value" id="capture-sv2">–</dd>
+                <dd class="meter-track" aria-hidden="true"><span class="meter-fill" id="capture-sv2-bar"></span></dd>
+              </div>
+              <div class="meter">
+                <dt class="meter-name">Other blocks</dt>
+                <dd class="meter-value" id="capture-other">–</dd>
+                <dd class="meter-track" aria-hidden="true"><span class="meter-fill" id="capture-other-bar"></span></dd>
+              </div>
+            </dl>
+          </section>
+
           <div class="dashboard-sidebar">
             <section class="card glass board" aria-labelledby="board-title">
               <div class="card-head">
