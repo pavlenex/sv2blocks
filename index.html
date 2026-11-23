@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="description" content="__DESCRIPTION__" />
+    <title>sv2blocks</title>
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <script src="./theme-init.js"></script>
+  </head>
+  <body>
+    <div class="page">
+      <div class="glow glow-a" aria-hidden="true"></div>
+      <div class="glow glow-b" aria-hidden="true"></div>
+      <div class="wrap">
+        <header class="top">
+          <div class="brand">
+            <svg class="mark" aria-hidden="true" width="24" height="24" viewBox="0 0 24 24">
+              <rect class="mark-dim" x="2" y="2" width="9" height="9" rx="2.5" />
+              <rect class="mark-lit" x="13" y="2" width="9" height="9" rx="2.5" />
+              <rect class="mark-dim" x="2" y="13" width="9" height="9" rx="2.5" />
+              <rect class="mark-dim" x="13" y="13" width="9" height="9" rx="2.5" />
+            </svg>
+            <span class="wordmark" id="site-title">sv2blocks</span>
+          </div>
+          <div class="seg seg-range" id="range" role="group" aria-label="Time range">
+            <button type="button" data-range="24H" aria-pressed="false">24H</button>
+            <button type="button" data-range="1W" aria-pressed="false">1W</button>
+            <button type="button" data-range="1M" aria-pressed="false">1M</button>
+            <button type="button" data-range="ALL" aria-pressed="false">All</button>
+          </div>
+          <button type="button" class="icon-button glass" id="theme-toggle" aria-label="Switch colour theme">
+            <svg class="icon-sun" aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+              <circle cx="12" cy="12" r="4" />
+              <path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6" />
+            </svg>
+            <svg class="icon-moon" aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20.5 13.2A8.5 8.5 0 1 1 10.8 3.5a6.6 6.6 0 0 0 9.7 9.7z" />
+            </svg>
+          </button>
+        </header>
+
+        <main class="bento">
+          <section class="card glass hero" aria-labelledby="hero-title">
+            <div class="hero-head">
+              <div class="metric-heading">
+                <h1 class="hero-label" id="hero-title">Stratum V2 blocks</h1>
+                <details class="metric-help" id="tracking-help" hidden>
+                  <summary aria-label="Tracking start block"><span aria-hidden="true">i</span></summary>
+                  <p class="metric-help-panel" id="tracked-scope"></p>
+                </details>
+              </div>
+              <p class="hero-number" id="total">–</p>
+              <p class="hero-change" id="hero-change" hidden>
+                <span class="chip" id="delta"></span>
+                <span id="range-text"></span>
+              </p>
+              <p class="status" id="status" role="status" hidden></p>
+            </div>
+            <div class="chart-wrap" id="chart-wrap" hidden>
+              <div class="chart-scale" id="chart-scale" aria-hidden="true"></div>
+              <div class="chart" id="chart">
+                <svg class="chart-layer fade" viewBox="0 0 1000 300" preserveAspectRatio="none" aria-hidden="true">
+                  <path class="chart-area" id="chart-area" d="" />
+                </svg>
+                <svg class="chart-layer" id="chart-svg" viewBox="0 0 1000 300" preserveAspectRatio="none" role="img" aria-label="Cumulative Stratum V2 blocks">
+                  <path class="chart-guides" id="chart-guides" d="" vector-effect="non-scaling-stroke" />
+                  <path class="chart-line" id="chart-line" d="" vector-effect="non-scaling-stroke" />
+                </svg>
+                <div class="chart-dot" id="chart-dot" aria-hidden="true"></div>
+                <div class="chart-cursor" id="chart-cursor" aria-hidden="true" hidden></div>
+                <div class="chart-cursor-dot" id="chart-cursor-dot" aria-hidden="true" hidden></div>
+                <div class="chart-readout" id="chart-readout" aria-hidden="true" hidden></div>
+              </div>
+              <div class="chart-ticks" id="chart-ticks" aria-hidden="true"></div>
+            </div>
+          </section>
+
+          <div class="dashboard-sidebar">
+            <section class="card glass board" aria-labelledby="board-title">
+              <div class="card-head">
+                <div>
+                  <h2 class="card-title" id="board-title">Leaderboard</h2>
+                  <p class="card-caption" id="board-range" hidden></p>
+                </div>
+                <div class="seg seg-unit" id="unit" role="group" aria-label="Revenue currency">
+                  <button type="button" data-unit="BTC" aria-pressed="true">BTC</button>
+                  <button type="button" data-unit="USD" aria-pressed="false">USD</button>
+                </div>
+              </div>
+              <ol class="board-list" id="board-list"></ol>
+              <p class="empty" id="board-empty" hidden>No Stratum V2 blocks in this range</p>
+            </section>
+
+            <section class="card glass tile latest" aria-labelledby="latest-title">
+              <h2 class="tile-label" id="latest-title">Latest Stratum V2 block</h2>
+              <div class="tile-body">
+                <a class="tile-number" id="latest-height" target="_blank" rel="noopener noreferrer">–</a>
+                <p class="tile-caption" id="latest-meta"></p>
+              </div>
+            </section>
+
+            <section class="card glass tile share" aria-labelledby="share-title">
+              <div class="metric-heading">
+                <h2 class="tile-label" id="share-title">Share of all blocks</h2>
+                <details class="metric-help" id="share-help" hidden>
+                  <summary id="share-help-toggle" aria-label="SV2 share details"><span aria-hidden="true">i</span></summary>
+                  <div class="metric-help-panel">
+                    <p id="share-count"></p>
+                    <p id="share-range"></p>
+                  </div>
+                </details>
+              </div>
+              <p class="tile-number" id="share">–</p>
+            </section>
+          </div>
+
+          <section class="card glass blocks" aria-labelledby="blocks-title">
+            <div class="blocks-heading">
+              <h2 class="card-title" id="blocks-title">Blocks</h2>
+              <span class="chip" id="grid-share" hidden></span>
+            </div>
+            <div class="blocks-content">
+              <div class="block-visual" id="block-visual" hidden>
+                <div class="grid" id="grid" tabindex="0" role="group" aria-label="Block grid. Use the arrow keys to move between blocks and Enter to open one.">
+                  <canvas id="grid-canvas" role="img" aria-label="Block grid"></canvas>
+                  <div class="grid-outline" id="grid-outline" aria-hidden="true" hidden></div>
+                  <div class="tip" id="grid-tip" role="status" hidden>
+                    <div class="tip-head">
+                      <strong class="tip-height" id="tip-height"></strong>
+                      <span class="tag" id="tip-tag"></span>
+                    </div>
+                    <div class="tip-pool" id="tip-pool"></div>
+                    <div class="tip-meta" id="tip-meta"></div>
+                  </div>
+                </div>
+                <p class="grid-legend"><span class="grid-key sv2">Stratum V2</span><span class="grid-key">Other blocks</span></p>
+              </div>
+              <p class="empty" id="grid-status" role="status" hidden></p>
+              <section class="recent-blocks" id="recent-blocks" aria-labelledby="recent-title" hidden>
+                <h3 id="recent-title">Recent SV2 blocks</h3>
+                <ol class="recent-list" id="recent-list" role="list"></ol>
+              </section>
+            </div>
+          </section>
+        </main>
+
+        <footer class="site-footer">
+          <p class="data-freshness" id="data-freshness" hidden>
+            <span id="indexed-tip"></span>
+            <span>Updated <time id="indexed-time"></time></span>
+          </p>
+          <div class="links" id="links"></div>
+        </footer>
+      </div>
+    </div>
+    <noscript>This page needs JavaScript to draw its charts.</noscript>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,27 @@
+{
+  "name": "sv2blocks",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Stratum V2 blocks mined on Bitcoin, counted.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"tests/*.test.mjs\"",
+    "check": "npm run typecheck && npm test",
+    "data:update": "node scripts/update-data.mjs",
+    "data:sample": "node scripts/make-sample-data.mjs"
+  },
+  "devDependencies": {
+    "@fontsource-variable/inter": "5.3.0",
+    "@fontsource-variable/jetbrains-mono": "5.3.0",
+    "typescript": "7.0.2",
+    "vite": "8.3.8"
+  }
+}

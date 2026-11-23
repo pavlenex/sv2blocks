@@ -1,0 +1,41 @@
+{
+  "site": {
+    "title": "sv2blocks",
+    "description": "Stratum V2 blocks mined on Bitcoin, counted.",
+    "defaultTheme": "dark",
+    "defaultRange": "ALL"
+  },
+  "mempool": {
+    "apiBase": "https://mempool.space/api",
+    "blockUrlByHash": "https://mempool.space/block/{hash}",
+    "blockUrlByHeight": "https://mempool.space/block/{height}",
+    "requestDelayMs": 500,
+    "timeoutMs": 20000
+  },
+  "price": {
+    "source": "mempool",
+    "sources": {
+      "mempool": { "url": "{mempoolApi}/v1/prices", "path": "USD" },
+      "coingecko": {
+        "url": "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd",
+        "path": "bitcoin.usd"
+      },
+      "kraken": { "url": "https://api.kraken.com/0/public/Ticker?pair=XBTUSD", "path": "result.XXBTZUSD.c.0" },
+      "fixed": { "value": 100000 }
+    }
+  },
+  "detection": {
+    "startHeight": 955318,
+    "coinbasePatterns": ["sv2", "stratum ?v2"],
+    "poolSlugs": [],
+    "overridesFile": "data/overrides.json"
+  },
+  "leaderboard": {
+    "size": 5
+  },
+  "links": [
+    { "label": "Discord", "href": "https://discord.gg/fsEW23wFYs", "icon": "icons/discord.svg" },
+    { "label": "X", "href": "https://x.com/sv2_blocks", "icon": "icons/x.svg" },
+    { "label": "GitHub", "href": "https://github.com/stratum-mining/stratum", "icon": "icons/github.svg" }
+  ]
+}
