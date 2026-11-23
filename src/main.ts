@@ -2,7 +2,7 @@ import '@fontsource-variable/inter/wght.css';
 import '@fontsource-variable/jetbrains-mono/wght.css';
 import './styles.css';
 import { createChart } from './chart';
-import { loadChunk, loadSummary } from './data';
+import { loadChunk, loadSummary, parseSummary } from './data';
 import { fmtAgo, fmtBtc, fmtClock, fmtDay, fmtInt, fmtPercent, fmtUsd } from './format';
 import { createGrid, type GridSource } from './grid';
 import type { BlockChunk, BlockInfo, RangeKey, Summary, Sv2Block, Theme, Unit } from './types';
@@ -45,7 +45,10 @@ const state: { range: RangeKey; unit: Unit } = {
   range: savedRange && RANGES.includes(savedRange) ? savedRange : config.defaultRange,
   unit: saved.get('unit') === 'USD' ? 'USD' : 'BTC',
 };
-let summary: Summary | null = null;
+let summary: Summary | null = embeddedSummary();
+let shownKey = '';
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+const tweens = new WeakMap<Element, number>();
 let refreshing = false;
 // Per-block details for the grid's hover card. They are not needed to draw the grid, so they are
 // fetched in small files only once someone points at it.
@@ -269,9 +272,54 @@ function renderLatest(data: Summary) {
   }
 }
 
+/** The build writes the current summary into the page; reading it here saves the first round trip. */
+function embeddedSummary(): Summary | null {
+  try {
+    const text = document.getElementById('summary-data')?.textContent;
+    return text ? parseSummary(JSON.parse(text)) : null;
+  } catch (error) {
+    console.error(error);
+    return null;
+  }
+}
+
+/** Counts a figure from the value it showed before to its new one. */
+function tweenNumber(element: HTMLElement, to: number, format: (value: number) => string) {
+  const from = Number(element.dataset.value ?? 0);
+  element.dataset.value = String(to);
+  cancelAnimationFrame(tweens.get(element) ?? 0);
+  if (reduceMotion.matches || from === to || !Number.isFinite(from)) {
+    element.textContent = format(to);
+    return;
+  }
+  const started = performance.now();
+  const step = (now: number) => {
+    const progress = Math.min(1, (now - started) / 700);
+    const eased = 1 - (1 - progress) ** 3;
+    element.textContent = format(progress < 1 ? from + (to - from) * eased : to);
+    if (progress < 1) tweens.set(element, requestAnimationFrame(step));
+  };
+  element.textContent = format(from);
+  tweens.set(element, requestAnimationFrame(step));
+}
+
+/** Restarts a CSS entrance animation on an element. */
+function replay(element: HTMLElement, name: string) {
+  element.classList.remove(name);
+  void element.offsetWidth;
+  element.classList.add(name);
+}
+
+/** Swaps the loading placeholders for real content (or, on failure, for the plain empty state). */
+function finishLoading() {
+  document.body.removeAttribute('data-loading');
+  $('dashboard').removeAttribute('aria-busy');
+}
+
 function render() {
   renderControls(summary);
   if (!summary) return;
+  finishLoading();
   const data = summary;
   const rangeStart = data.ranges[state.range];
   const inRange = data.sv2.slice(firstAtOrAbove(data.sv2, rangeStart));
@@ -280,6 +328,11 @@ function render() {
   const before = total - delta;
   const blocksInRange = Math.max(0, data.tip - rangeStart + 1);
   const words = rangeWords(data);
+  // Entrance animations play on first show, on a range change and when a new Stratum V2 block lands,
+  // not on every redraw (BTC/USD) or routine background refresh.
+  const key = `${state.range}|${total}`;
+  const entering = key !== shownKey;
+  if (!entering) for (const id of ['board-list', 'recent-list']) $(id).classList.remove('is-entering');
 
   const indexed = data.tip >= data.start
     ? `Indexed through block ${fmtInt(data.tip)}`
@@ -290,7 +343,7 @@ function render() {
   indexedTime.textContent = `${fmtDay(data.updatedAt)} at ${fmtClock(data.updatedAt)}`;
   $('data-freshness').hidden = false;
 
-  $('total').textContent = fmtInt(total);
+  tweenNumber($('total'), total, (value) => fmtInt(Math.round(value)));
   $('tracked-scope').textContent = `since block ${fmtInt(data.start)}`;
   $('tracking-help').hidden = false;
   $('hero-change').hidden = state.range === 'ALL';
@@ -318,7 +371,7 @@ function render() {
   renderLatest(data);
 
   const share = fmtPercent(delta, blocksInRange);
-  $('share').textContent = share;
+  tweenNumber($('share'), blocksInRange > 0 ? (delta / blocksInRange) * 100 : 0, (value) => (blocksInRange > 0 ? `${value.toFixed(2)}%` : '0%'));
   $('share-count').textContent = `${fmtInt(delta)} of ${fmtInt(blocksInRange)} blocks`;
   $('share-range').textContent = words;
   $('share-help').hidden = false;
@@ -335,6 +388,14 @@ function render() {
     grid.setSource(source, `Block grid: ${fmtInt(delta)} Stratum V2 blocks out of ${fmtInt(source.count)}, ${words}`);
   } else {
     gridStatus.textContent = 'No blocks to show in this range';
+  }
+
+  if (entering) {
+    shownKey = key;
+    replay($('chart'), 'is-drawing');
+    replay($('board-list'), 'is-entering');
+    replay($('recent-list'), 'is-entering');
+    replay($('block-visual'), 'is-entering');
   }
 }
 
@@ -355,6 +416,7 @@ async function refresh() {
   } catch (error) {
     console.error(error);
     if (!summary) {
+      finishLoading();
       $('status').textContent = 'Block data is not available yet.';
       $('status').hidden = false;
     }

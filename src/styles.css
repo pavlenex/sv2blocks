@@ -15,6 +15,8 @@
   --block-dim: rgba(255, 255, 255, 0.11);
   --control: rgba(255, 255, 255, 0.07);
   --control-active: rgba(255, 255, 255, 0.17);
+  --skeleton: rgba(255, 255, 255, 0.07);
+  --skeleton-glint: rgba(255, 255, 255, 0.16);
   --tooltip: rgba(22, 22, 24, 0.94);
   --glow-cyan: #00d4ff;
   --glow-deep: #0891b2;
@@ -39,6 +41,8 @@
   --block-dim: rgba(24, 24, 27, 0.1);
   --control: rgba(24, 24, 27, 0.06);
   --control-active: #ffffff;
+  --skeleton: rgba(24, 24, 27, 0.07);
+  --skeleton-glint: rgba(24, 24, 27, 0.15);
   --tooltip: rgba(255, 255, 255, 0.97);
   --glow-a-opacity: 0.16;
   --glow-b-opacity: 0.1;
@@ -891,6 +895,282 @@ a.tile-number[href]:hover {
 }
 
 /* Phone */
+
+/* Loading. Placeholders are shaped like the content they stand in for (a figure, a chart line, list
+   rows, a field of cells) and share one soft shimmer. When the data arrives the figures count up,
+   the chart draws from left to right and rows arrive one after another. */
+
+.skeleton {
+  display: none;
+}
+
+[data-loading] .skeleton {
+  display: block;
+}
+
+[data-loading] :is(.hero-number, .tile-number, .tile-caption),
+.skeleton-ticks span,
+.skeleton-rows span {
+  border-radius: var(--radius-pill);
+  background: linear-gradient(100deg, var(--skeleton) 35%, var(--skeleton-glint) 50%, var(--skeleton) 65%);
+  background-size: 300% 100%;
+  animation: skeleton-shimmer 1.5s linear infinite;
+}
+
+[data-loading] :is(.hero-number, .tile-number) {
+  display: block;
+  width: 1.5ch;
+  border-radius: var(--radius-md);
+  color: transparent;
+  user-select: none;
+}
+
+[data-loading] .tile-number {
+  width: 5ch;
+  border-radius: 10px;
+}
+
+[data-loading] .tile-caption {
+  width: 9ch;
+  height: 0.9em;
+  margin-top: 4px;
+}
+
+/* Chart: three faint guides, a rising line that breathes, four tick marks. */
+[data-loading] .skeleton-chart {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-rows: minmax(clamp(156px, 22cqi, 212px), 1fr) auto;
+  gap: var(--space-3);
+}
+
+.skeleton-chart svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.skeleton-guides {
+  fill: none;
+  stroke: var(--glass-border);
+  stroke-width: 1px;
+}
+
+.skeleton-curve {
+  fill: none;
+  stroke: var(--skeleton-glint);
+  stroke-width: 2.5px;
+  stroke-linecap: round;
+  animation: skeleton-breathe 1.5s ease-in-out infinite;
+}
+
+.skeleton-ticks {
+  display: flex;
+  justify-content: space-between;
+}
+
+.skeleton-ticks span {
+  width: 44px;
+  height: 10px;
+}
+
+/* Rows: a name, a count chip and an amount, like the leaderboard and the recent-blocks list. */
+[data-loading] .skeleton-rows {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.skeleton-rows > div {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 28px;
+}
+
+.skeleton-rows span {
+  height: 12px;
+}
+
+.skeleton-rows span:nth-child(1) {
+  width: 34%;
+  margin-right: auto;
+}
+
+.skeleton-rows span:nth-child(2) {
+  width: 58px;
+  height: 20px;
+}
+
+.skeleton-rows span:nth-child(3) {
+  width: 64px;
+}
+
+.skeleton-rows > div:nth-child(2) span:nth-child(1) {
+  width: 26%;
+}
+
+.skeleton-rows > div:nth-child(3) span:nth-child(1) {
+  width: 30%;
+}
+
+.skeleton-rows > div:nth-child(4) span:nth-child(1) {
+  width: 22%;
+}
+
+/* Blocks: a field of small cells beside (or above) a short list. */
+[data-loading] .skeleton-blocks {
+  display: grid;
+  align-items: start;
+  gap: var(--space-6);
+}
+
+@container (width > 760px) {
+  [data-loading] .skeleton-blocks {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  }
+}
+
+.skeleton-cells {
+  height: clamp(170px, 24cqi, 220px);
+  background: var(--block-dim);
+  -webkit-mask-image: linear-gradient(to right, transparent 1px, #000 1px), linear-gradient(to bottom, transparent 1px, #000 1px);
+  mask-image: linear-gradient(to right, transparent 1px, #000 1px), linear-gradient(to bottom, transparent 1px, #000 1px);
+  -webkit-mask-size: 7px 7px;
+  mask-size: 7px 7px;
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+  animation: skeleton-breathe 1.5s ease-in-out infinite;
+}
+
+.skeleton-recent > div {
+  min-height: var(--touch-min);
+  border-top: 1px solid var(--glass-border);
+}
+
+.skeleton-recent span:nth-child(1) {
+  width: 62px;
+  margin-right: 0;
+}
+
+.skeleton-recent span:nth-child(2) {
+  width: 30%;
+  height: 12px;
+  margin-right: auto;
+}
+
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+
+@keyframes skeleton-breathe {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* Arrival. Cards settle in once at page load. */
+.card {
+  animation: card-in 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.board {
+  animation-delay: 0.05s;
+}
+
+.latest {
+  animation-delay: 0.1s;
+}
+
+.share {
+  animation-delay: 0.15s;
+}
+
+.blocks {
+  animation-delay: 0.2s;
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+/* The chart is wiped in from the left; its end dot pops in when the line gets there. */
+.chart.is-drawing .chart-layer {
+  animation: chart-draw 0.9s cubic-bezier(0.3, 0.6, 0.2, 1) both;
+}
+
+.chart.is-drawing .chart-dot {
+  animation: dot-in 0.3s ease-out 0.75s both;
+}
+
+@keyframes chart-draw {
+  from {
+    clip-path: inset(-12px 100% -12px -12px);
+  }
+  to {
+    clip-path: inset(-12px -12px -12px -12px);
+  }
+}
+
+@keyframes dot-in {
+  from {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+}
+
+/* Rows arrive one after another. */
+.is-entering > * {
+  animation: row-in 0.35s ease-out both;
+}
+
+.is-entering > :nth-child(2) {
+  animation-delay: 0.05s;
+}
+
+.is-entering > :nth-child(3) {
+  animation-delay: 0.1s;
+}
+
+.is-entering > :nth-child(4) {
+  animation-delay: 0.15s;
+}
+
+.is-entering > :nth-child(n + 5) {
+  animation-delay: 0.2s;
+}
+
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.block-visual.is-entering {
+  animation: fade-in 0.5s ease-out both;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+  }
+}
 
 @container (max-width: 760px) {
   .bento {

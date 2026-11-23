@@ -1,5 +1,7 @@
-import { defineConfig, type Plugin } from 'vite';
+import { readFile } from 'node:fs/promises';
+import { defineConfig, type HtmlTagDescriptor, type Plugin } from 'vite';
 import { clientConfig, loadConfig } from './scripts/lib/config.mjs';
+import { embeddableJson } from './scripts/lib/embed.mjs';
 
 // The browser may only load what this site itself serves: no third-party scripts, styles, fonts or requests.
 const CSP = [
@@ -24,14 +26,19 @@ export default defineConfig(async ({ command }) => {
 
   const html: Plugin = {
     name: 'sv2blocks-html',
-    transformIndexHtml(source) {
+    async transformIndexHtml(source) {
       const page = source
         .replace('<html lang="en">', `<html lang="en" data-default-theme="${escapeHtml(config.site.defaultTheme)}">`)
         .replace(/<title>.*?<\/title>/, `<title>${escapeHtml(config.site.title)}</title>`)
         .replace('content="__DESCRIPTION__"', `content="${escapeHtml(config.site.description)}"`);
+      const tags: HtmlTagDescriptor[] = [];
+      // The current summary travels inside the page, so the first paint does not wait for a second request.
+      // It is inert data (not a script the browser runs); the page still re-checks summary.json afterwards.
+      const summary = embeddableJson(await readFile('public/data/summary.json', 'utf8').catch(() => undefined));
+      if (summary) tags.push({ tag: 'script', attrs: { type: 'application/json', id: 'summary-data' }, children: summary, injectTo: 'body' });
       // The dev server injects styles inline, so the policy is only added to real builds.
-      if (command !== 'build') return page;
-      return { html: page, tags: [{ tag: 'meta', attrs: { 'http-equiv': 'Content-Security-Policy', content: CSP }, injectTo: 'head-prepend' }] };
+      if (command === 'build') tags.push({ tag: 'meta', attrs: { 'http-equiv': 'Content-Security-Policy', content: CSP }, injectTo: 'head-prepend' });
+      return { html: page, tags };
     },
   };
 

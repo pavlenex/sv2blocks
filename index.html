@@ -10,7 +10,7 @@
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
     <script src="./theme-init.js"></script>
   </head>
-  <body>
+  <body data-loading>
     <div class="page">
       <div class="glow glow-a" aria-hidden="true"></div>
       <div class="glow glow-b" aria-hidden="true"></div>
@@ -42,7 +42,7 @@
           </button>
         </header>
 
-        <main class="bento">
+        <main class="bento" id="dashboard" aria-busy="true">
           <section class="card glass hero" aria-labelledby="hero-title">
             <div class="hero-head">
               <div class="metric-heading">
@@ -58,6 +58,13 @@
                 <span id="range-text"></span>
               </p>
               <p class="status" id="status" role="status" hidden></p>
+            </div>
+            <div class="skeleton skeleton-chart" aria-hidden="true">
+              <svg viewBox="0 0 1000 300" preserveAspectRatio="none">
+                <path class="skeleton-guides" d="M0 14H1000M0 153H1000M0 292H1000" vector-effect="non-scaling-stroke" />
+                <path class="skeleton-curve" d="M0 292C250 286 430 268 570 212S830 66 1000 14" vector-effect="non-scaling-stroke" />
+              </svg>
+              <div class="skeleton-ticks"><span></span><span></span><span></span><span></span></div>
             </div>
             <div class="chart-wrap" id="chart-wrap" hidden>
               <div class="chart-scale" id="chart-scale" aria-hidden="true"></div>
@@ -89,6 +96,11 @@
                   <button type="button" data-unit="BTC" aria-pressed="true">BTC</button>
                   <button type="button" data-unit="USD" aria-pressed="false">USD</button>
                 </div>
+              </div>
+              <div class="skeleton skeleton-rows" aria-hidden="true">
+                <div><span></span><span></span><span></span></div>
+                <div><span></span><span></span><span></span></div>
+                <div><span></span><span></span><span></span></div>
               </div>
               <ol class="board-list" id="board-list"></ol>
               <p class="empty" id="board-empty" hidden>No Stratum V2 blocks in this range</p>
@@ -123,6 +135,15 @@
               <span class="chip" id="grid-share" hidden></span>
             </div>
             <div class="blocks-content">
+              <div class="skeleton skeleton-blocks" aria-hidden="true">
+                <div class="skeleton-cells"></div>
+                <div class="skeleton-rows skeleton-recent">
+                  <div><span></span><span></span><span></span></div>
+                  <div><span></span><span></span><span></span></div>
+                  <div><span></span><span></span><span></span></div>
+                  <div><span></span><span></span><span></span></div>
+                </div>
+              </div>
               <div class="block-visual" id="block-visual" hidden>
                 <div class="grid" id="grid" tabindex="0" role="group" aria-label="Block grid. Use the arrow keys to move between blocks and Enter to open one.">
                   <canvas id="grid-canvas" role="img" aria-label="Block grid"></canvas>
