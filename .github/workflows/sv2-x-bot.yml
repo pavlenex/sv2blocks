@@ -1,0 +1,113 @@
+# Posts from the @sv2_blocks account on X when a new Stratum V2 block is mined.
+#
+# It runs right after every "Update data and deploy" run. That workflow is started every 10 minutes
+# by an outside scheduler, because GitHub's own schedule proved unreliable for this repository, so
+# the bot gets the same dependable rhythm for free. The schedule below is only a fallback.
+#
+# Its cursor (state.json) is kept as the single commit of the branch `bot-state`. Nothing on that
+# branch touches master, and pushes made by a workflow do not start other workflows, so saving
+# state never triggers a site deploy. The first run records the current block and posts nothing.
+#
+# Setup (see bot/README.md):
+#   1. Repository secrets: X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_TOKEN_SECRET.
+#   2. Run it once by hand: Actions → SV2 X bot → Run workflow.
+#   Optional repository variable SV2_BOT_MENTION_POOLS=true to @mention pools instead of naming them.
+
+name: SV2 X bot
+
+on:
+  workflow_run:
+    workflows: ['Update data and deploy']
+    types: [completed]
+  schedule:
+    - cron: '8-59/10 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: sv2-x-bot
+  cancel-in-progress: false
+
+# Nothing by default; the one job below asks for what it needs.
+permissions: {}
+
+jobs:
+  post:
+    # Only this repository (never a fork) and only the code on the default branch can post.
+    if: github.repository == 'pavlenex/sv2blocks' && github.ref_name == github.event.repository.default_branch
+    permissions:
+      contents: write # to save state.json on the bot-state branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      STATE_DIR: ${{ github.workspace }}/bot-state
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: repo
+          persist-credentials: true # the last step pushes state.json
+
+      - name: Load state from the bot-state branch
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          mkdir -p "$STATE_DIR"
+          status=0
+          git ls-remote --exit-code --heads origin bot-state >/dev/null || status=$?
+          if [ "$status" -eq 0 ]; then
+            git fetch --no-tags --depth=1 origin bot-state
+            if git cat-file -e FETCH_HEAD:state.json 2>/dev/null; then
+              git show FETCH_HEAD:state.json > "$STATE_DIR/state.json"
+              cp "$STATE_DIR/state.json" "$STATE_DIR/state.loaded.json"
+            fi
+          elif [ "$status" -eq 2 ]; then
+            echo "No bot-state branch yet; this run creates it."
+          else
+            echo "Could not reach the repository (git ls-remote exit $status)"
+            exit "$status"
+          fi
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+
+      # Exact versions, checked against the file hashes in requirements.txt, so the code that later
+      # runs next to the X keys is byte for byte what was reviewed.
+      - name: Install pinned dependencies
+        run: python -m pip install --disable-pip-version-check --require-hashes --no-deps -r repo/bot/requirements.txt
+
+      # The keys exist only in this step's environment. Nothing here echoes the environment.
+      - name: Run bot
+        working-directory: repo/bot
+        env:
+          X_API_KEY: ${{ secrets.X_API_KEY }}
+          X_API_SECRET: ${{ secrets.X_API_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
+          MENTION_POOLS: ${{ vars.SV2_BOT_MENTION_POOLS || 'false' }}
+          USER_AGENT: sv2blocks-x-bot (+https://github.com/${{ github.repository }})
+          PYTHONUNBUFFERED: '1'
+        run: python sv2_bot.py --once --state-file "$STATE_DIR/state.json"
+
+      # Runs even when the bot step failed part-way: a block that was posted must be remembered,
+      # or the next run would try to post it again.
+      - name: Save state to the bot-state branch
+        if: always()
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          if [ ! -f "$STATE_DIR/state.json" ]; then
+            echo "No state.json was written; nothing to save."
+            exit 0
+          fi
+          if [ -f "$STATE_DIR/state.loaded.json" ] && cmp -s "$STATE_DIR/state.json" "$STATE_DIR/state.loaded.json"; then
+            echo "State unchanged."
+            exit 0
+          fi
+          export GIT_AUTHOR_NAME="sv2-x-bot" GIT_AUTHOR_EMAIL="41898282+github-actions[bot]@users.noreply.github.com"
+          export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME" GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+          blob="$(git hash-object -w "$STATE_DIR/state.json")"
+          tree="$(printf '100644 blob %s\tstate.json\n' "$blob" | git mktree)"
+          commit="$(git commit-tree "$tree" -m "SV2 bot state")"
+          # The branch is always this one commit, so it never grows. Runs are serialised by the
+          # concurrency group above, so there is nothing else to overwrite.
+          git push --force origin "$commit:refs/heads/bot-state"

@@ -6,3 +6,11 @@ public/data/blocks/
 *.log
 .env
 .env.*
+!.env.example
+!bot/.env.example
+bot/.env
+bot/state.json
+bot/state.json.lock
+bot/__pycache__/
+.venv
+bot/.venv
