@@ -12,7 +12,7 @@ It will not post a backlog on first run. Without `--backfill-hours` it only reco
 
 Do this after the bot files and `.github/workflows/sv2-x-bot.yml` are on the default branch (`master`).
 
-1. **Create the bot account** (if you have not already). This repo's site already links to [@sv2_blocks](https://x.com/sv2_blocks). In the bio, say that it is a bot and who runs it, for example `SV2 block bot managed by @pavlenex`. Turn on the Automated label from [account automation settings](https://x.com/settings/account/automation) if the option is available, with `@pavlenex` as the managing account.
+1. **Create the bot account** (if you have not already). This repo's site already links to [@sv2blocks](https://x.com/sv2blocks). In the bio, say that it is a bot and who runs it, for example `SV2 block bot managed by @pavlenex`. Turn on the Automated label from [account automation settings](https://x.com/settings/account/automation) if the option is available, with `@pavlenex` as the managing account.
 
 2. **Get X API keys** signed in as the **bot** at [console.x.com](https://console.x.com). Set User authentication to **Read and write**, then generate the Access Token and Secret (tokens created before that permission change stay read-only). You need four values: API Key (Consumer Key), API Secret, Access Token, Access Token Secret. Add credits in the developer console; a paid X Premium on @pavlenex does not cover this API.
 

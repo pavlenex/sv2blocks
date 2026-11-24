@@ -2,7 +2,7 @@
 
 Tracks Bitcoin blocks mined with Stratum V2, their share of all tracked blocks, and rewards by mining pool.
 
-New Stratum V2 blocks are also posted on X by [@sv2_blocks](https://x.com/sv2_blocks). The bot lives in [`bot/`](bot/) and has its own workflow and setup notes in [bot/README.md](bot/README.md).
+New Stratum V2 blocks are also posted on X by [@sv2blocks](https://x.com/sv2blocks). The bot lives in [`bot/`](bot/) and has its own workflow and setup notes in [bot/README.md](bot/README.md).
 
 ## GitHub Pages
 

@@ -35,7 +35,7 @@
   },
   "links": [
     { "label": "Discord", "href": "https://discord.gg/fsEW23wFYs", "icon": "icons/discord.svg" },
-    { "label": "X", "href": "https://x.com/sv2_blocks", "icon": "icons/x.svg" },
+    { "label": "X", "href": "https://x.com/sv2blocks", "icon": "icons/x.svg" },
     { "label": "GitHub", "href": "https://github.com/stratum-mining/stratum", "icon": "icons/github.svg" }
   ]
 }

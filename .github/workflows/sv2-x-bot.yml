@@ -1,4 +1,4 @@
-# Posts from the @sv2_blocks account on X when a new Stratum V2 block is mined.
+# Posts from the @sv2blocks account on X when a new Stratum V2 block is mined.
 #
 # It runs right after every "Update data and deploy" run. That workflow is started every 10 minutes
 # by an outside scheduler, because GitHub's own schedule proved unreliable for this repository, so
