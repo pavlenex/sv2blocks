@@ -38,6 +38,14 @@ export function validateConfig(raw) {
   if (typeof site.title !== 'string' || !site.title.trim()) fail('"site.title" must be text');
   if (!['dark', 'light', 'system'].includes(site.defaultTheme)) fail('"site.defaultTheme" must be dark, light or system');
   if (!RANGES.includes(site.defaultRange)) fail(`"site.defaultRange" must be one of ${RANGES.join(', ')}`);
+  // Optional: the public address of the site. Link previews (Discord, X, Telegram) need full addresses.
+  let siteUrl = '';
+  if (site.url !== undefined && site.url !== '') {
+    if (typeof site.url !== 'string') fail('"site.url" must be text');
+    const url = assertSafeUrl(site.url, '"site.url"');
+    if (url.search || url.hash) fail('"site.url" must not contain ? or #');
+    siteUrl = url.href.endsWith('/') ? url.href : `${url.href}/`;
+  }
 
   if (!isObject(mempool)) fail('"mempool" is missing');
   const apiBase = String(mempool.apiBase ?? '').replace(/\/+$/, '');
@@ -96,15 +104,13 @@ export function validateConfig(raw) {
     if (!/^[A-Za-z0-9_\-/.]+\.svg$/.test(link.icon) || link.icon.includes('..') || link.icon.startsWith('/')) {
       fail(`link "${link.label}": "icon" must be a relative path to an .svg file in public/`);
     }
-    if (link.preserveIconColors !== undefined && typeof link.preserveIconColors !== 'boolean') {
-      fail(`link "${link.label}": "preserveIconColors" must be a boolean`);
-    }
   }
 
   return {
     site: {
       title: site.title.trim(),
       description: String(site.description ?? ''),
+      url: siteUrl,
       defaultTheme: site.defaultTheme,
       defaultRange: site.defaultRange,
     },
@@ -123,7 +129,7 @@ export function validateConfig(raw) {
       overridesFile: detection.overridesFile,
     },
     leaderboard: { size },
-    links: links.map(({ label, href, icon, preserveIconColors = false }) => ({ label, href, icon, preserveIconColors })),
+    links: links.map((link) => ({ label: link.label, href: link.href, icon: link.icon })),
   };
 }
 

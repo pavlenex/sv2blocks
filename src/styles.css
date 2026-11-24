@@ -889,9 +889,6 @@ a.tile-number[href]:hover {
 .link-icon {
   width: 20px;
   height: 20px;
-}
-
-.link-icon-mask {
   background: currentColor;
   -webkit-mask: center / contain no-repeat;
   mask: center / contain no-repeat;

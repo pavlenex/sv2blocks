@@ -1,7 +1,8 @@
 {
   "site": {
     "title": "sv2blocks",
-    "description": "Stratum V2 blocks mined on Bitcoin, counted.",
+    "description": "Stratum V2 mainnet blocks tracker.",
+    "url": "https://sv2blocks.com/",
     "defaultTheme": "dark",
     "defaultRange": "ALL"
   },
@@ -36,7 +37,7 @@
   "links": [
     { "label": "Discord", "href": "https://discord.gg/fsEW23wFYs", "icon": "icons/discord.svg" },
     { "label": "X", "href": "https://x.com/sv2blocks", "icon": "icons/x.svg" },
-    { "label": "Telegram", "href": "https://t.me/+LZeFAU3jydQxZGY0", "icon": "icons/telegram.svg", "preserveIconColors": true },
+    { "label": "Telegram", "href": "https://t.me/+LZeFAU3jydQxZGY0", "icon": "icons/telegram-mono.svg" },
     { "label": "GitHub", "href": "https://github.com/pavlenex/sv2blocks", "icon": "icons/github.svg" }
   ]
 }

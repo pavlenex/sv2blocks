@@ -9,7 +9,7 @@ export interface ClientConfig {
   blockUrlByHash: string;
   blockUrlByHeight: string;
   leaderboardSize: number;
-  links: { label: string; href: string; icon: string; preserveIconColors: boolean }[];
+  links: { label: string; href: string; icon: string }[];
 }
 
 export interface Sv2Block {

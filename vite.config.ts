@@ -34,6 +34,30 @@ export default defineConfig(async ({ command }) => {
         .replace(/<title>.*?<\/title>/, `<title>${escapeHtml(title)}</title>`)
         .replace('content="__DESCRIPTION__"', `content="${escapeHtml(config.site.description)}"`);
       const tags: HtmlTagDescriptor[] = [];
+      // What Discord, X, Telegram and others show when the dashboard's address is shared. They need
+      // full addresses, so this is added only when "site.url" is set. The image is public/og.png.
+      if (name === 'index.html' && config.site.url) {
+        const image = new URL('og.png', config.site.url).href;
+        const property = (key: string, content: string): HtmlTagDescriptor => ({ tag: 'meta', attrs: { property: key, content }, injectTo: 'head' });
+        const named = (key: string, content: string): HtmlTagDescriptor => ({ tag: 'meta', attrs: { name: key, content }, injectTo: 'head' });
+        tags.push(
+          { tag: 'link', attrs: { rel: 'canonical', href: config.site.url }, injectTo: 'head' },
+          property('og:type', 'website'),
+          property('og:site_name', config.site.title),
+          property('og:title', config.site.title),
+          property('og:description', config.site.description),
+          property('og:url', config.site.url),
+          property('og:image', image),
+          property('og:image:type', 'image/png'),
+          property('og:image:width', '1200'),
+          property('og:image:height', '630'),
+          property('og:image:alt', `${config.site.title}: ${config.site.description}`),
+          named('twitter:card', 'summary_large_image'),
+          named('twitter:title', config.site.title),
+          named('twitter:description', config.site.description),
+          named('twitter:image', image),
+        );
+      }
       // The current summary travels inside the page, so the first paint does not wait for a second request.
       // It is inert data (not a script the browser runs); the page still re-checks summary.json afterwards.
       const summary = name === 'embeds.html' ? null : embeddableJson(await readFile('public/data/summary.json', 'utf8').catch(() => undefined));
