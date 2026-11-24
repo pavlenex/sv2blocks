@@ -1,3 +1,6 @@
 requests>=2.32.0
 requests-oauthlib>=2.0.0
 python-dotenv>=1.0.0
+# Nostr: signing (libsecp256k1) and the relay connection.
+coincurve>=21.0.0
+websocket-client>=1.8.0

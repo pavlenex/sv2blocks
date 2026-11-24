@@ -7,8 +7,8 @@ tag. A bare "v2" is not enough — random extranonce bytes can spell that
 by chance.
 
 The same blocks can also be posted to a Telegram channel (set
-TELEGRAM_BOT_TOKEN and TELEGRAM_CHANNEL) and to a Discord channel (set
-DISCORD_WEBHOOK_URL). See README.md.
+TELEGRAM_BOT_TOKEN and TELEGRAM_CHANNEL), to a Discord channel (set
+DISCORD_WEBHOOK_URL) and to Nostr (set NOSTR_PRIVATE_KEY). See README.md.
 
 This script never posts unless it is given X API user-context credentials
 and is run without --dry-run. First run without --backfill-hours only
@@ -19,6 +19,7 @@ old blocks onto a new account.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -35,6 +36,14 @@ from zoneinfo import ZoneInfo
 
 import requests
 from requests_oauthlib import OAuth1
+
+# Only Nostr needs these two. Without them everything else still works.
+try:
+    import websocket  # the "websocket-client" package
+    from coincurve import PrivateKey, PublicKeyXOnly
+except ImportError:  # pragma: no cover - optional unless NOSTR_PRIVATE_KEY is set
+    websocket = None  # type: ignore[assignment]
+    PrivateKey = PublicKeyXOnly = None  # type: ignore[assignment,misc]
 
 try:
     from dotenv import load_dotenv
@@ -65,6 +74,19 @@ USER_AGENT = "sv2-x-bot/1.0"
 MAX_TWEET_LEN = 280
 MAX_TELEGRAM_LEN = 4096
 MAX_DISCORD_LEN = 2000
+MAX_NOSTR_LEN = 2000
+# Used when NOSTR_RELAYS is not set: long-standing free public relays. A note is posted once any
+# one of them accepts it, so a relay being down or closed to new accounts does no harm.
+DEFAULT_NOSTR_RELAYS = (
+    "wss://relay.damus.io",
+    "wss://nos.lol",
+    "wss://relay.primal.net",
+    "wss://relay.snort.social",
+    "wss://nostr.mom",
+)
+MAX_NOSTR_RELAYS = 12
+NOSTR_TIMEOUT = 10
+NOSTR_KIND_TEXT_NOTE = 1
 # Blocks waiting for Telegram or Discord are kept in state.json; this caps each queue if the
 # service stays unreachable or misconfigured for a long time.
 MAX_PENDING_POSTS = 50
@@ -551,6 +573,7 @@ def default_state() -> dict[str, Any]:
         "recent": [],
         "telegram_pending": [],
         "discord_pending": [],
+        "nostr_pending": [],
     }
 
 
@@ -564,7 +587,7 @@ def load_state(path: Path) -> dict[str, Any]:
     state.setdefault("pool_counts", {})
     state.setdefault("posted", {})
     state.setdefault("recent", [])
-    for key in ("telegram_pending", "discord_pending"):
+    for key in ("telegram_pending", "discord_pending", "nostr_pending"):
         if not isinstance(state.get(key), list):
             state[key] = []
     # JSON keys are strings; keep posted keys as hashes (strings).
@@ -664,6 +687,10 @@ class DiscordError(ChannelError):
     pass
 
 
+class NostrError(ChannelError):
+    pass
+
+
 def retry_wait(label: str, error: type, status: int, asked: Any, backoff: float) -> float:
     """How long to wait before the next attempt after a 429 or a server error.
 
@@ -719,7 +746,7 @@ class TelegramClient:
     def _scrub(self, text: str) -> str:
         return text.replace(self._token, "<token>") if self._token else text
 
-    def post(self, text: str) -> Any:
+    def post(self, text: str, queued_at: Any = None) -> Any:
         """Send the text and return the new message's id."""
         return self.send_message(text).get("message_id")
 
@@ -824,7 +851,7 @@ class DiscordClient:
         self._session = session or requests.Session()
         self._session.headers.update({"User-Agent": user_agent})
 
-    def post(self, text: str) -> Any:
+    def post(self, text: str, queued_at: Any = None) -> Any:
         """Send the text and return the new message's id."""
         # allowed_mentions with nothing to parse: no text, whoever supplied it, can ping
         # @everyone, a role or a member.
@@ -871,6 +898,258 @@ class DiscordClient:
             raise DiscordError(f"Discord refused the message ({last})")
 
         raise DiscordError(f"Discord could not be reached ({last})")
+
+
+# --- Nostr -----------------------------------------------------------------
+# A Nostr account is a key pair. A post ("note") is a small JSON object signed with the private
+# key and handed to relays over WebSocket (NIP-01). There is no service to log in to.
+
+BECH32_CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+
+
+def _bech32_polymod(values: list[int]) -> int:
+    generators = (0x3B6A57B2, 0x26508E6D, 0x1EA119FA, 0x3D4233DD, 0x2A1462B3)
+    checksum = 1
+    for value in values:
+        top = checksum >> 25
+        checksum = ((checksum & 0x1FFFFFF) << 5) ^ value
+        for bit, generator in enumerate(generators):
+            if (top >> bit) & 1:
+                checksum ^= generator
+    return checksum
+
+
+def _bech32_hrp_expand(hrp: str) -> list[int]:
+    return [ord(char) >> 5 for char in hrp] + [0] + [ord(char) & 31 for char in hrp]
+
+
+def _regroup_bits(data: list[int], from_bits: int, to_bits: int, pad: bool) -> Optional[list[int]]:
+    acc = bits = 0
+    out: list[int] = []
+    limit = (1 << to_bits) - 1
+    for value in data:
+        if value < 0 or value >> from_bits:
+            return None
+        acc = (acc << from_bits) | value
+        bits += from_bits
+        while bits >= to_bits:
+            bits -= to_bits
+            out.append((acc >> bits) & limit)
+    if pad:
+        if bits:
+            out.append((acc << (to_bits - bits)) & limit)
+    elif bits >= from_bits or ((acc << (to_bits - bits)) & limit):
+        return None
+    return out
+
+
+def bech32_decode(text: str, hrp: str) -> Optional[bytes]:
+    """The bytes inside a bech32 string such as nsec1... (NIP-19), or None if it is not valid."""
+    if text != text.lower() and text != text.upper():
+        return None
+    text = text.lower()
+    prefix = hrp + "1"
+    if not text.startswith(prefix) or len(text) > 200:
+        return None
+    try:
+        values = [BECH32_CHARSET.index(char) for char in text[len(prefix):]]
+    except ValueError:
+        return None
+    if len(values) < 7 or _bech32_polymod(_bech32_hrp_expand(hrp) + values) != 1:
+        return None
+    data = _regroup_bits(values[:-6], 5, 8, False)
+    return bytes(data) if data is not None else None
+
+
+def bech32_encode(hrp: str, data: bytes) -> str:
+    values = _regroup_bits(list(data), 8, 5, True) or []
+    polymod = _bech32_polymod(_bech32_hrp_expand(hrp) + values + [0] * 6) ^ 1
+    checksum = [(polymod >> (5 * (5 - index))) & 31 for index in range(6)]
+    return hrp + "1" + "".join(BECH32_CHARSET[value] for value in values + checksum)
+
+
+def nostr_secret(raw: str) -> Optional[bytes]:
+    """The 32-byte private key from an nsec1... string or 64 hex digits, or None."""
+    raw = raw.strip()
+    secret = bech32_decode(raw, "nsec")
+    if secret is None and re.fullmatch(r"[0-9a-fA-F]{64}", raw):
+        secret = bytes.fromhex(raw)
+    if secret is None or len(secret) != 32 or PrivateKey is None:
+        return None
+    try:
+        PrivateKey(secret)  # refuses zero and anything outside the curve's range
+    except ValueError:
+        return None
+    return secret
+
+
+def nostr_relay_address(raw: str) -> Optional[str]:
+    """A relay address is wss://host[/path]. ws:// is allowed only to this machine, for tests."""
+    try:
+        parts = urlsplit(raw.strip())
+        port = parts.port
+    except ValueError:
+        return None
+    host = (parts.hostname or "").lower()
+    local = host in ("localhost", "127.0.0.1", "::1")
+    if not host or parts.username or parts.password or parts.fragment:
+        return None
+    if parts.scheme != "wss" and not (parts.scheme == "ws" and local):
+        return None
+    netloc = f"[{host}]" if ":" in host else host
+    if port is not None:
+        netloc += f":{port}"
+    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, ""))
+
+
+def nostr_event(secret: bytes, content: str, created_at: int, kind: int = NOSTR_KIND_TEXT_NOTE) -> dict[str, Any]:
+    """A signed Nostr event (NIP-01). The id depends only on the account, time, kind and text."""
+    # NIP-01 fixes how the text is escaped before hashing. Python's JSON writer follows it for
+    # everything except rare control characters, so those are dropped (line breaks are kept).
+    content = "".join(char for char in content if char == "\n" or ord(char) >= 32)
+    pubkey = PublicKeyXOnly.from_secret(secret).format().hex()
+    tags: list[list[str]] = []
+    serialized = json.dumps([0, pubkey, created_at, kind, tags, content], separators=(",", ":"), ensure_ascii=False)
+    event_id = hashlib.sha256(serialized.encode("utf-8")).digest()
+    signature = PrivateKey(secret).sign_schnorr(event_id)
+    # Never hand out a signature that does not verify.
+    if not PublicKeyXOnly(bytes.fromhex(pubkey)).verify(signature, event_id):
+        raise NostrError("the Nostr signature did not verify")
+    return {
+        "id": event_id.hex(),
+        "pubkey": pubkey,
+        "created_at": created_at,
+        "kind": kind,
+        "tags": tags,
+        "content": content,
+        "sig": signature.hex(),
+    }
+
+
+def _printable(text: Any, limit: int = 80) -> str:
+    """Text from a relay, made safe to put in a log line."""
+    return "".join(char if 32 <= ord(char) < 127 else " " for char in str(text))[:limit].strip()
+
+
+class NostrClient:
+    """Posts notes to Nostr relays as one account.
+
+    The private key is the account: it cannot be changed or revoked. It is used only to sign,
+    and it never appears in a log line, an exception or the state file.
+    """
+
+    label = "Nostr"
+    pending_key = "nostr_pending"
+    retry_key = "nostr_retry_at"
+    id_field = "nostr_id"
+    max_len = MAX_NOSTR_LEN
+
+    def __init__(
+        self,
+        *,
+        secret: bytes,
+        relays: list[str],
+        user_agent: str = USER_AGENT,
+        timeout: float = NOSTR_TIMEOUT,
+        connect: Any = None,
+    ) -> None:
+        if not relays:
+            raise ValueError("no relays")
+        self._secret = secret
+        self.relays = list(relays)
+        self.user_agent = user_agent
+        self.timeout = timeout
+        self._connect = connect or websocket.create_connection
+        self.pubkey = PublicKeyXOnly.from_secret(secret).format().hex()
+        self.npub = bech32_encode("npub", bytes.fromhex(self.pubkey))
+
+    def __repr__(self) -> str:  # never the key
+        return f"NostrClient({self.npub})"
+
+    def post(self, text: str, queued_at: Any = None) -> Any:
+        """Publish the text as a note and return its id.
+
+        The note's time is when the block was queued, so a retry signs the very same note. Relays
+        keep one copy of a note, which means a retry can never produce a second post.
+        """
+        created_at = int(queued_at) if isinstance(queued_at, (int, float)) and not isinstance(queued_at, bool) and queued_at > 0 else int(time.time())
+        event = nostr_event(self._secret, text, created_at)
+        accepted: list[str] = []
+        refused: list[str] = []
+        for relay in self.relays:
+            host = urlsplit(relay).hostname or "relay"
+            ok, detail = self._publish(relay, event)
+            if ok:
+                accepted.append(host)
+            else:
+                refused.append(f"{host}: {detail}")
+        if refused:
+            log.warning("Nostr: not accepted by %s", "; ".join(refused))
+        if not accepted:
+            raise NostrError("no Nostr relay accepted the note")
+        log.info("Nostr: note %s accepted by %s of %s relays (%s)", event["id"][:12], len(accepted), len(self.relays), ", ".join(accepted))
+        return event["id"]
+
+    def _publish(self, relay: str, event: dict[str, Any]) -> tuple[bool, str]:
+        """Hand the note to one relay and wait for its verdict."""
+        connection = None
+        try:
+            connection = self._connect(relay, timeout=self.timeout, header=[f"User-Agent: {self.user_agent}"])
+            connection.send(json.dumps(["EVENT", event], separators=(",", ":"), ensure_ascii=False))
+            deadline = time.monotonic() + self.timeout
+            # A relay may send other messages first (a notice, a request to log in); skip a few.
+            for _ in range(8):
+                if time.monotonic() > deadline:
+                    break
+                raw = connection.recv()
+                if isinstance(raw, bytes) or len(raw) > 20_000:
+                    continue
+                try:
+                    message = json.loads(raw)
+                except ValueError:
+                    continue
+                if not isinstance(message, list) or len(message) < 3 or message[0] != "OK" or message[1] != event["id"]:
+                    continue
+                reason = _printable(message[3]) if len(message) > 3 else ""
+                # "duplicate:" means the relay already has this note, which is what we want.
+                if message[2] is True or reason.startswith("duplicate"):
+                    return True, reason
+                return False, reason or "refused"
+            return False, "no answer"
+        except Exception as exc:  # a relay being down or odd must never stop the others
+            return False, type(exc).__name__
+        finally:
+            if connection is not None:
+                try:
+                    connection.close()
+                except Exception:
+                    pass
+
+
+def nostr_from_env() -> Optional[NostrClient]:
+    raw = (os.environ.get("NOSTR_PRIVATE_KEY") or "").strip()
+    if not raw:
+        return None
+    if websocket is None or PrivateKey is None:
+        log.warning("Nostr needs the coincurve and websocket-client packages (pip install -r requirements.txt); not posting to Nostr.")
+        return None
+    secret = nostr_secret(raw)
+    if secret is None:
+        # The value is the account itself, so it is never shown.
+        log.warning("NOSTR_PRIVATE_KEY is not a valid key (expected nsec1... or 64 hex digits); not posting to Nostr.")
+        return None
+    wanted = [piece for piece in re.split(r"[\s,]+", os.environ.get("NOSTR_RELAYS") or "") if piece] or list(DEFAULT_NOSTR_RELAYS)
+    relays: list[str] = []
+    for piece in wanted[:MAX_NOSTR_RELAYS]:
+        address = nostr_relay_address(piece)
+        if address is None:
+            log.warning("Nostr: ignoring relay %s (a relay address looks like wss://relay.example)", _printable(piece, 60))
+        elif address not in relays:
+            relays.append(address)
+    if not relays:
+        log.warning("NOSTR_RELAYS has no usable relay; not posting to Nostr.")
+        return None
+    return NostrClient(secret=secret, relays=relays, user_agent=os.environ.get("USER_AGENT", USER_AGENT))
 
 
 def telegram_from_env() -> Optional[TelegramClient]:
@@ -926,7 +1205,7 @@ class Channel:
 
 
 def channels_from_env(template: str) -> list[Channel]:
-    """The Telegram and Discord channels that are configured. X's template is the default text."""
+    """The Telegram, Discord and Nostr channels that are configured. X's template is the default text."""
 
     def text_for(name: str) -> str:
         return os.environ.get(name, template).replace("\\n", "\n")
@@ -938,6 +1217,9 @@ def channels_from_env(template: str) -> list[Channel]:
     discord = discord_from_env()
     if discord is not None:
         channels.append(Channel(discord, text_for("DISCORD_TEMPLATE"), env_flag("DISCORD_INCLUDE_LINK", True), discord_escape))
+    nostr = nostr_from_env()
+    if nostr is not None:
+        channels.append(Channel(nostr, text_for("NOSTR_TEMPLATE"), env_flag("NOSTR_INCLUDE_LINK", True)))
     return channels
 
 
@@ -947,7 +1229,8 @@ def queue_post(state: dict[str, Any], channel: Channel, *, block_hash: str, heig
     pending = [row for row in (state.get(key) or []) if isinstance(row, dict)]
     if any(row.get("hash") == block_hash for row in pending):
         return
-    pending.append({"hash": block_hash, "height": height, "text": text})
+    # queued_at lets a channel that can (Nostr) send the identical post again after a failure.
+    pending.append({"hash": block_hash, "height": height, "text": text, "queued_at": int(time.time())})
     if len(pending) > MAX_PENDING_POSTS:
         log.warning("%s queue is full; dropping the oldest %s block(s)", label, len(pending) - MAX_PENDING_POSTS)
         pending = pending[-MAX_PENDING_POSTS:]
@@ -985,7 +1268,7 @@ def flush_channel(state: dict[str, Any], state_path: Path, channel: Channel, *, 
     while pending:
         row = pending[0]
         try:
-            message_id = client.post(str(row["text"]))
+            message_id = client.post(str(row["text"]), queued_at=row.get("queued_at"))
         except ChannelError as exc:
             log.error("%s: block %s was not posted and stays queued: %s", label, row.get("height"), exc)
             channel.failed = True
@@ -1534,6 +1817,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Send one real test message through DISCORD_WEBHOOK_URL and exit. Cannot be combined with --dry-run.",
     )
     p.add_argument(
+        "--nostr-test",
+        action="store_true",
+        help="Publish one real, public test note with NOSTR_PRIVATE_KEY and exit. Cannot be combined with --dry-run.",
+    )
+    p.add_argument(
         "--self-test",
         action="store_true",
         help="Run local detection fixtures and exit (no network, no posts).",
@@ -1861,6 +2149,122 @@ def self_test() -> int:
         time.sleep = real_sleep
     print("  [ok] rate limits are honoured in full, or remembered until they have passed")
 
+    # Nostr: key decoding (the NIP-19 examples), signing, relay answers, and one note per block.
+    if PrivateKey is None or websocket is None:
+        print("  [skipped] Nostr (coincurve and websocket-client are not installed)")
+    else:
+        example_hex = "67dea2ed018072d675f5415ecfaed7d2597555e202d85b3d65ea4e58d2d92ffa"
+        example_nsec = "nsec1vl029mgpspedva04g90vltkh6fvh240zqtv9k0t9af8935ke9laqsnlfe5"
+        example_npub = "npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg"
+        key = nostr_secret(example_nsec)
+        assert key is not None and key.hex() == example_hex and nostr_secret(example_hex) == key
+        assert bech32_encode("nsec", key) == example_nsec
+        for bad_key in ("", "nsec1", example_nsec[:-1] + "q", example_npub, "0" * 64, "f" * 64, example_hex[:-1]):
+            assert nostr_secret(bad_key) is None, bad_key
+        # BIP-340 test vector 0: the signing library gives the standard's own answer.
+        assert PublicKeyXOnly.from_secret((3).to_bytes(32, "big")).format().hex().upper() == "F9308A019258C31049344F85F89D5229B531C845836F99B08601F113BCE036F9"
+        assert PrivateKey((3).to_bytes(32, "big")).sign_schnorr(bytes(32), bytes(32)).hex().upper() == (
+            "E907831F80848D1069A5371B402410364BDF1C5F8307B0084C55F1CE2DCA8215"
+            "25F66A4A85EA8B71E482A74F382D2CE5EBEEE8FDB2172F477DF4900D310536C0"
+        )
+
+        note = nostr_event(key, "Stratum V2 block #1 mined by\nA \"quoted\" pool \\ \x07 \u533a\u5757", 1_800_000_000)
+        assert note["pubkey"] == bech32_decode(example_npub, "npub").hex() and note["kind"] == 1 and note["tags"] == []
+        assert "\x07" not in note["content"] and "\n" in note["content"]
+        expected_id = hashlib.sha256(
+            ('[0,"' + note["pubkey"] + '",1800000000,1,[],"Stratum V2 block #1 mined by\\nA \\"quoted\\" pool \\\\  \u533a\u5757"]').encode("utf-8")
+        ).hexdigest()
+        assert note["id"] == expected_id, (note["id"], expected_id)
+        assert PublicKeyXOnly(bytes.fromhex(note["pubkey"])).verify(bytes.fromhex(note["sig"]), bytes.fromhex(note["id"]))
+        assert nostr_event(key, "same", 5)["id"] == nostr_event(key, "same", 5)["id"] != nostr_event(key, "same", 6)["id"]
+
+        for good in ("wss://relay.example", "wss://relay.example:444/path", "ws://127.0.0.1:7777"):
+            assert nostr_relay_address(good) == good, good
+        for bad_relay in ("", "https://relay.example", "ws://relay.example", "wss://user:pw@relay.example", "wss://", "relay.example"):
+            assert nostr_relay_address(bad_relay) is None, bad_relay
+
+        class FakeRelay:
+            """Answers like a relay: what it sends back is decided by `answer`."""
+
+            def __init__(self, answer: Any) -> None:
+                self.answer = answer
+                self.events: list[dict[str, Any]] = []
+                self.closed = 0
+
+            def __call__(self, address: str, timeout: Any = None, header: Any = None) -> "FakeRelay":
+                if self.answer == "down":
+                    raise OSError(f"cannot reach {address}")
+                self.inbox: list[Any] = []
+                return self
+
+            def send(self, raw: str) -> None:
+                kind, event = json.loads(raw)
+                assert kind == "EVENT"
+                self.events.append(event)
+                if self.answer == "accept":
+                    self.inbox = ['["NOTICE","hello"]', "not json", json.dumps(["OK", "another-id", True, ""]), json.dumps(["OK", event["id"], True, ""])]
+                elif self.answer == "duplicate":
+                    self.inbox = [json.dumps(["OK", event["id"], False, "duplicate: already have this event"])]
+                elif self.answer == "refuse":
+                    self.inbox = [json.dumps(["OK", event["id"], False, "blocked: not on the allow list\n\x1b[31m"])]
+                else:
+                    self.inbox = ['["NOTICE","nothing useful"]'] * 20
+
+            def recv(self) -> str:
+                return self.inbox.pop(0)
+
+            def close(self) -> None:
+                self.closed += 1
+
+        def nostr_client(relay: FakeRelay, count: int = 1) -> NostrClient:
+            return NostrClient(secret=key, relays=[f"wss://relay{index}.example" for index in range(count)], connect=relay, timeout=2)
+
+        relay = FakeRelay("accept")
+        client = nostr_client(relay, 2)
+        assert example_hex not in repr(client) and example_nsec not in repr(client) and client.npub == example_npub
+        first_id = client.post("block one", queued_at=1_800_000_000)
+        assert first_id == relay.events[0]["id"] and len(relay.events) == 2 and relay.closed == 2
+        assert relay.events[0]["created_at"] == 1_800_000_000 and relay.events[0]["content"] == "block one"
+        # The same block sent again is the very same note, so a retry cannot create a second post.
+        assert client.post("block one", queued_at=1_800_000_000) == first_id
+        assert nostr_client(FakeRelay("duplicate")).post("block one", queued_at=1_800_000_000) == first_id
+        for failing in ("refuse", "silent", "down"):
+            try:
+                nostr_client(FakeRelay(failing)).post("block one", queued_at=1_800_000_000)
+                raise AssertionError(f"{failing}: a note no relay accepted must raise")
+            except NostrError as exc:
+                assert example_hex not in str(exc) and example_nsec not in str(exc)
+
+        # One relay failing is fine as long as another accepts.
+        class Mixed:
+            def __init__(self) -> None:
+                self.down, self.up = FakeRelay("down"), FakeRelay("accept")
+
+            def __call__(self, address: str, timeout: Any = None, header: Any = None) -> Any:
+                return (self.down if "relay0" in address else self.up)(address, timeout=timeout, header=header)
+
+        assert NostrClient(secret=key, relays=["wss://relay0.example", "wss://relay1.example"], connect=Mixed()).post("x", queued_at=7)
+
+        # Through the queue: a failed attempt and its retry publish the identical note.
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "state.json"
+            state = default_state()
+            state["posted"] = {"aa": {"height": 1}}
+            down = Channel(nostr_client(FakeRelay("down")), DEFAULT_TEMPLATE, True)
+            queue_post(state, down, block_hash="aa", height=1, text="queued block")
+            queued_at = state["nostr_pending"][0]["queued_at"]
+            save_state(path, state)  # as process() does after queueing a block
+            assert flush_channel(state, path, down, save=True) == 1
+            saved_text = path.read_text(encoding="utf-8")
+            assert example_hex not in saved_text and example_nsec not in saved_text
+            relay = FakeRelay("accept")
+            up = Channel(nostr_client(relay), DEFAULT_TEMPLATE, True)
+            state = load_state(path)
+            assert flush_channel(state, path, up, save=True) == 0
+            assert relay.events[0]["created_at"] == queued_at
+            assert state["posted"]["aa"]["nostr_id"] == relay.events[0]["id"] == nostr_event(key, "queued block", queued_at)["id"]
+        print("  [ok] Nostr: key decoding, signing, relay answers, and identical notes on retry")
+
     # --verbose must not let the HTTP or OAuth libraries log addresses or signing details.
     levels = {name: logging.getLogger(name).level for name in ("urllib3", "requests", "requests_oauthlib", "oauthlib")}
     own_level = log.level
@@ -1893,6 +2297,9 @@ def channel_test(client: Any, missing: str) -> int:
         log.error("%s test failed: %s", client.label, exc)
         return 1
     log.info("%s test message sent (message id=%s)", client.label, message_id)
+    if isinstance(client, NostrClient):
+        # Public information: the account's address, to follow it or link to it.
+        log.info("Nostr account: %s (see it at https://njump.me/%s)", client.npub, client.npub)
     return 0
 
 
@@ -2024,19 +2431,22 @@ def configure_logging(verbose: bool) -> None:
 def main(argv: Optional[list[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if (args.telegram_test or args.discord_test) and (args.dry_run or args.loop):
+    testing = args.telegram_test or args.discord_test or args.nostr_test
+    if testing and (args.dry_run or args.loop):
         # A test sends a real message, so it must never be mistaken for a run that sends nothing.
-        parser.error("--telegram-test and --discord-test send a real message and cannot be combined with --dry-run or --loop")
+        parser.error("--telegram-test, --discord-test and --nostr-test send a real message and cannot be combined with --dry-run or --loop")
     load_env_file(args.env_file)
     configure_logging(args.verbose)
     if args.self_test:
         return self_test()
-    if args.telegram_test or args.discord_test:
+    if testing:
         codes = []
         if args.telegram_test:
             codes.append(channel_test(telegram_from_env(), "TELEGRAM_BOT_TOKEN and TELEGRAM_CHANNEL"))
         if args.discord_test:
             codes.append(channel_test(discord_from_env(), "DISCORD_WEBHOOK_URL"))
+        if args.nostr_test:
+            codes.append(channel_test(nostr_from_env(), "NOSTR_PRIVATE_KEY"))
         return max(codes)
 
     if args.loop:

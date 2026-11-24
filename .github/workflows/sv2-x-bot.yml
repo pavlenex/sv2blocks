@@ -15,6 +15,8 @@
 #   Optional Telegram channel: secret TELEGRAM_BOT_TOKEN and variable TELEGRAM_CHANNEL (for example
 #   @sv2blocks). To check it, run this workflow by hand with "Send a test message" ticked.
 #   Optional Discord channel: secret DISCORD_WEBHOOK_URL (the channel's webhook address). Same check.
+#   Optional Nostr account: secret NOSTR_PRIVATE_KEY (the bot's own nsec). Relays default to a built-in
+#   list; the variable NOSTR_RELAYS (comma-separated wss:// addresses) replaces it. Same check.
 
 name: SV2 X bot
 
@@ -32,6 +34,10 @@ on:
         default: false
       discord_test:
         description: Send a test message to the Discord channel
+        type: boolean
+        default: false
+      nostr_test:
+        description: Publish a public test note on Nostr
         type: boolean
         default: false
 
@@ -104,10 +110,19 @@ jobs:
           PYTHONUNBUFFERED: '1'
         run: python sv2_bot.py --discord-test
 
+      - name: Publish a Nostr test note
+        if: github.event_name == 'workflow_dispatch' && inputs.nostr_test
+        working-directory: repo/bot
+        env:
+          NOSTR_PRIVATE_KEY: ${{ secrets.NOSTR_PRIVATE_KEY }}
+          NOSTR_RELAYS: ${{ vars.NOSTR_RELAYS }}
+          PYTHONUNBUFFERED: '1'
+        run: python sv2_bot.py --nostr-test
+
       # The keys exist only in this step's environment. Nothing here echoes the environment.
       # A run started by hand to send a test message only tests: it does not also look for blocks.
       - name: Run bot
-        if: ${{ !(github.event_name == 'workflow_dispatch' && (inputs.telegram_test || inputs.discord_test)) }}
+        if: ${{ !(github.event_name == 'workflow_dispatch' && (inputs.telegram_test || inputs.discord_test || inputs.nostr_test)) }}
         working-directory: repo/bot
         env:
           X_API_KEY: ${{ secrets.X_API_KEY }}
@@ -122,6 +137,9 @@ jobs:
           TELEGRAM_CHANNEL: ${{ vars.TELEGRAM_CHANNEL }}
           # Optional: with this set, each block is also posted to the Discord channel.
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          # Optional: with the key set, each block is also posted to Nostr.
+          NOSTR_PRIVATE_KEY: ${{ secrets.NOSTR_PRIVATE_KEY }}
+          NOSTR_RELAYS: ${{ vars.NOSTR_RELAYS }}
           USER_AGENT: sv2blocks-x-bot (+https://github.com/${{ github.repository }})
           PYTHONUNBUFFERED: '1'
         run: python sv2_bot.py --once --state-file "$STATE_DIR/state.json"
