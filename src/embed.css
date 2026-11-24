@@ -64,6 +64,7 @@ body.embed {
   font-size: 12px;
   font-weight: 500;
   text-decoration: none;
+  transition: color 120ms ease;
 }
 
 .widget-link:hover {
@@ -86,7 +87,7 @@ body.embed.is-measuring .widget {
 }
 
 body.embed.is-measuring .widget .chart {
-  min-height: clamp(156px, 22cqi, 212px);
+  min-height: clamp(168px, 22cqi, 224px);
 }
 
 /* The snippets page */
@@ -125,7 +126,7 @@ body.embed.is-measuring .widget .chart {
 }
 
 .embed-item h2 {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 600;
   letter-spacing: -0.02em;
 }

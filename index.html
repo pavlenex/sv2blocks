@@ -25,21 +25,23 @@
             </svg>
             <span class="wordmark" id="site-title">sv2blocks</span>
           </div>
-          <div class="seg seg-range" id="range" role="group" aria-label="Time range">
-            <button type="button" data-range="24H" aria-pressed="false">24H</button>
-            <button type="button" data-range="1W" aria-pressed="false">1W</button>
-            <button type="button" data-range="1M" aria-pressed="false">1M</button>
-            <button type="button" data-range="ALL" aria-pressed="false">All</button>
+          <div class="top-controls">
+            <div class="seg seg-range" id="range" role="group" aria-label="Time range">
+              <button type="button" data-range="24H" aria-pressed="false">24H</button>
+              <button type="button" data-range="1W" aria-pressed="false">1W</button>
+              <button type="button" data-range="1M" aria-pressed="false">1M</button>
+              <button type="button" data-range="ALL" aria-pressed="false">All</button>
+            </div>
+            <button type="button" class="icon-button glass" id="theme-toggle" aria-label="Switch colour theme">
+              <svg class="icon-sun" aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+                <circle cx="12" cy="12" r="4" />
+                <path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6" />
+              </svg>
+              <svg class="icon-moon" aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20.5 13.2A8.5 8.5 0 1 1 10.8 3.5a6.6 6.6 0 0 0 9.7 9.7z" />
+              </svg>
+            </button>
           </div>
-          <button type="button" class="icon-button glass" id="theme-toggle" aria-label="Switch colour theme">
-            <svg class="icon-sun" aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-              <circle cx="12" cy="12" r="4" />
-              <path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6" />
-            </svg>
-            <svg class="icon-moon" aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M20.5 13.2A8.5 8.5 0 1 1 10.8 3.5a6.6 6.6 0 0 0 9.7 9.7z" />
-            </svg>
-          </button>
         </header>
 
         <main class="bento" id="dashboard" aria-busy="true">
@@ -85,49 +87,51 @@
             </div>
           </section>
 
-          <div class="dashboard-sidebar">
-            <section class="card glass board" aria-labelledby="board-title">
-              <div class="card-head">
-                <div>
-                  <h2 class="card-title" id="board-title">Leaderboard</h2>
-                  <p class="card-caption" id="board-range" hidden></p>
-                </div>
-                <div class="seg seg-unit" id="unit" role="group" aria-label="Revenue currency">
-                  <button type="button" data-unit="BTC" aria-pressed="true">BTC</button>
-                  <button type="button" data-unit="USD" aria-pressed="false">USD</button>
-                </div>
-              </div>
-              <div class="skeleton skeleton-rows" aria-hidden="true">
-                <div><span></span><span></span><span></span></div>
-                <div><span></span><span></span><span></span></div>
-                <div><span></span><span></span><span></span></div>
-              </div>
-              <ol class="board-list" id="board-list"></ol>
-              <p class="empty" id="board-empty" hidden>No Stratum V2 blocks in this range</p>
-            </section>
-
-            <section class="card glass tile latest" aria-labelledby="latest-title">
+          <section class="card glass tile latest" aria-labelledby="latest-title">
+            <div class="metric-heading">
               <h2 class="tile-label" id="latest-title">Latest Stratum V2 block</h2>
-              <div class="tile-body">
-                <a class="tile-number" id="latest-height" target="_blank" rel="noopener noreferrer">–</a>
-                <p class="tile-caption" id="latest-meta"></p>
-              </div>
-            </section>
+            </div>
+            <div class="tile-body">
+              <a class="tile-number" id="latest-height" target="_blank" rel="noopener noreferrer">–</a>
+              <p class="tile-caption" id="latest-meta"></p>
+            </div>
+          </section>
 
-            <section class="card glass tile share" aria-labelledby="share-title">
-              <div class="metric-heading">
-                <h2 class="tile-label" id="share-title">Share of all blocks</h2>
-                <details class="metric-help" id="share-help" hidden>
-                  <summary id="share-help-toggle" aria-label="SV2 share details"><span aria-hidden="true">i</span></summary>
-                  <div class="metric-help-panel">
-                    <p id="share-count"></p>
-                    <p id="share-range"></p>
-                  </div>
-                </details>
+          <section class="card glass tile share" aria-labelledby="share-title">
+            <div class="metric-heading">
+              <h2 class="tile-label" id="share-title">Share of all blocks</h2>
+              <details class="metric-help" id="share-help" hidden>
+                <summary id="share-help-toggle" aria-label="SV2 share details"><span aria-hidden="true">i</span></summary>
+                <div class="metric-help-panel">
+                  <p id="share-count"></p>
+                  <p id="share-range"></p>
+                </div>
+              </details>
+            </div>
+            <p class="tile-number" id="share">–</p>
+          </section>
+
+          <section class="card glass board" aria-labelledby="board-title">
+            <div class="card-head">
+              <div>
+                <h2 class="card-title" id="board-title">Leaderboard</h2>
+                <p class="card-caption" id="board-range" hidden></p>
               </div>
-              <p class="tile-number" id="share">–</p>
-            </section>
-          </div>
+              <div class="seg seg-unit" id="unit" role="group" aria-label="Revenue currency">
+                <button type="button" data-unit="BTC" aria-pressed="true">BTC</button>
+                <button type="button" data-unit="USD" aria-pressed="false">USD</button>
+              </div>
+            </div>
+            <div class="skeleton skeleton-rows" aria-hidden="true">
+              <div><span></span><span></span><span></span></div>
+              <div><span></span><span></span><span></span></div>
+              <div><span></span><span></span><span></span></div>
+              <div><span></span><span></span><span></span></div>
+              <div><span></span><span></span><span></span></div>
+            </div>
+            <ol class="board-list" id="board-list"></ol>
+            <p class="empty" id="board-empty" hidden>No Stratum V2 blocks in this range</p>
+          </section>
 
           <section class="card glass blocks" aria-labelledby="blocks-title">
             <div class="blocks-heading">
@@ -173,7 +177,10 @@
             <span id="indexed-tip"></span>
             <span>Updated <time id="indexed-time"></time></span>
           </p>
-          <div class="links" id="links"></div>
+          <div class="footer-actions">
+            <a class="footer-link glass" href="./embeds.html">Embeds</a>
+            <div class="links" id="links"></div>
+          </div>
         </footer>
       </div>
     </div>

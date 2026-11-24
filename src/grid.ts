@@ -96,7 +96,6 @@ export function createGrid(elements: GridElements, options: GridOptions) {
     const dimColor = styles.getPropertyValue('--block-dim').trim() || 'rgba(128,128,128,0.2)';
     const accent = styles.getPropertyValue('--accent').trim() || '#00d4ff';
     const background = styles.getPropertyValue('--bg').trim() || '#000000';
-    const dark = document.documentElement.getAttribute('data-theme') !== 'light';
     const { size, cols, offsetX } = layout;
     const rounded = size >= ROUNDED_FROM && typeof context.roundRect === 'function';
     const gap = size >= ROUNDED_FROM ? Math.round(size * 0.14) : size >= 1.5 ? 1 : 0;
@@ -131,14 +130,8 @@ export function createGrid(elements: GridElements, options: GridOptions) {
       trace(index, rounded ? gap : 0);
       if (markSmallCells) markers.push({ index, ...cellCenter(current, index) });
     }
-    context.save();
-    if (dark) {
-      context.shadowColor = accent;
-      context.shadowBlur = 5 * ratio;
-    }
     context.fillStyle = accent;
     context.fill();
-    context.restore();
 
     // Outlines mark tiny SV2 cells and keep each cell at its original position and size.
     if (markers.length > 0) {
