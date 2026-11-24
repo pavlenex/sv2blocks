@@ -74,6 +74,10 @@ The block URL is omitted unless you pass `--block-link` or set `INCLUDE_BLOCK_LI
 
 New blocks are also posted to our [Telegram channel](https://t.me/+LZeFAU3jydQxZGY0), where they can be tracked. The bot posts there when the secret `TELEGRAM_BOT_TOKEN` and the variable `TELEGRAM_CHANNEL` are set.
 
+## Discord
+
+New blocks are also posted to a Discord channel when the secret `DISCORD_WEBHOOK_URL` (the channel's webhook address) is set.
+
 ## Dependencies
 
 `requirements.txt` pins every package, including indirect ones, to an exact version with file hashes, and the workflow installs with `--require-hashes`. Edit `requirements.in` and regenerate it with [pip-tools](https://pip-tools.readthedocs.io): `pip-compile --generate-hashes --strip-extras --allow-unsafe -o requirements.txt requirements.in`.

@@ -36,7 +36,7 @@
   "links": [
     { "label": "Discord", "href": "https://discord.gg/fsEW23wFYs", "icon": "icons/discord.svg" },
     { "label": "X", "href": "https://x.com/sv2blocks", "icon": "icons/x.svg" },
-    { "label": "Telegram", "href": "https://t.me/+LZeFAU3jydQxZGY0", "icon": "icons/telegram.svg" },
+    { "label": "Telegram", "href": "https://t.me/+LZeFAU3jydQxZGY0", "icon": "icons/telegram.svg", "preserveIconColors": true },
     { "label": "GitHub", "href": "https://github.com/pavlenex/sv2blocks", "icon": "icons/github.svg" }
   ]
 }

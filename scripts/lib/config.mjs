@@ -96,6 +96,9 @@ export function validateConfig(raw) {
     if (!/^[A-Za-z0-9_\-/.]+\.svg$/.test(link.icon) || link.icon.includes('..') || link.icon.startsWith('/')) {
       fail(`link "${link.label}": "icon" must be a relative path to an .svg file in public/`);
     }
+    if (link.preserveIconColors !== undefined && typeof link.preserveIconColors !== 'boolean') {
+      fail(`link "${link.label}": "preserveIconColors" must be a boolean`);
+    }
   }
 
   return {
@@ -120,7 +123,7 @@ export function validateConfig(raw) {
       overridesFile: detection.overridesFile,
     },
     leaderboard: { size },
-    links: links.map((link) => ({ label: link.label, href: link.href, icon: link.icon })),
+    links: links.map(({ label, href, icon, preserveIconColors = false }) => ({ label, href, icon, preserveIconColors })),
   };
 }
 

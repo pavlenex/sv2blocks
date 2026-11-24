@@ -371,12 +371,19 @@ function buildLinks() {
       anchor.rel = 'noopener noreferrer';
       anchor.title = link.label;
       anchor.setAttribute('aria-label', link.label);
-      const icon = document.createElement('span');
+      const iconUrl = `./${link.icon}`;
+      const icon = link.preserveIconColors ? document.createElement('img') : document.createElement('span');
       icon.className = 'link-icon';
       icon.setAttribute('aria-hidden', 'true');
-      const image = `url("./${link.icon}")`;
-      icon.style.setProperty('-webkit-mask-image', image);
-      icon.style.setProperty('mask-image', image);
+      if (icon instanceof HTMLImageElement) {
+        icon.src = iconUrl;
+        icon.alt = '';
+      } else {
+        icon.classList.add('link-icon-mask');
+        const mask = `url("${iconUrl}")`;
+        icon.style.setProperty('-webkit-mask-image', mask);
+        icon.style.setProperty('mask-image', mask);
+      }
       anchor.append(icon);
       return anchor;
     }),

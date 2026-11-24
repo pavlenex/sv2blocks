@@ -6,8 +6,9 @@ coinbase scriptsig) to printable ASCII and look for an Sv2 / Stratum V2
 tag. A bare "v2" is not enough — random extranonce bytes can spell that
 by chance.
 
-The same blocks can also be posted to a Telegram channel: set
-TELEGRAM_BOT_TOKEN and TELEGRAM_CHANNEL (see README.md).
+The same blocks can also be posted to a Telegram channel (set
+TELEGRAM_BOT_TOKEN and TELEGRAM_CHANNEL) and to a Discord channel (set
+DISCORD_WEBHOOK_URL). See README.md.
 
 This script never posts unless it is given X API user-context credentials
 and is run without --dry-run. First run without --backfill-hours only
@@ -25,9 +26,11 @@ import re
 import sys
 import tempfile
 import time
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from zoneinfo import ZoneInfo
 
 import requests
@@ -61,10 +64,14 @@ HTTP_TIMEOUT = 30
 USER_AGENT = "sv2-x-bot/1.0"
 MAX_TWEET_LEN = 280
 MAX_TELEGRAM_LEN = 4096
-# Blocks waiting for Telegram are kept in state.json; this caps the queue if Telegram stays
-# unreachable or misconfigured for a long time.
-MAX_TELEGRAM_PENDING = 50
-TELEGRAM_TEST_TEXT = "sv2blocks is connected. New Stratum V2 blocks will be posted here."
+MAX_DISCORD_LEN = 2000
+# Blocks waiting for Telegram or Discord are kept in state.json; this caps each queue if the
+# service stays unreachable or misconfigured for a long time.
+MAX_PENDING_POSTS = 50
+CONNECTED_TEXT = "sv2blocks is connected. New Stratum V2 blocks will be posted here."
+# A Discord webhook address is only ever one of these hosts followed by this path.
+DISCORD_WEBHOOK_HOSTS = ("discord.com", "discordapp.com", "canary.discord.com", "ptb.discord.com")
+DISCORD_WEBHOOK_PATH = "/api/webhooks/"
 
 # Known coinbaseRaw values from the recap, used by --self-test.
 FIXTURE_977145 = (
@@ -537,6 +544,7 @@ def default_state() -> dict[str, Any]:
         "posted": {},
         "recent": [],
         "telegram_pending": [],
+        "discord_pending": [],
     }
 
 
@@ -550,8 +558,9 @@ def load_state(path: Path) -> dict[str, Any]:
     state.setdefault("pool_counts", {})
     state.setdefault("posted", {})
     state.setdefault("recent", [])
-    if not isinstance(state.get("telegram_pending"), list):
-        state["telegram_pending"] = []
+    for key in ("telegram_pending", "discord_pending"):
+        if not isinstance(state.get(key), list):
+            state[key] = []
     # JSON keys are strings; keep posted keys as hashes (strings).
     state["pool_counts"] = {str(k): int(v) for k, v in state["pool_counts"].items()}
     return state
@@ -631,11 +640,19 @@ class XClient:
 
 
 # ---------------------------------------------------------------------------
-# Telegram
+# Telegram and Discord
 # ---------------------------------------------------------------------------
 
-class TelegramError(RuntimeError):
-    """A message Telegram did not accept. Its text never contains the bot token."""
+class ChannelError(RuntimeError):
+    """A message Telegram or Discord did not accept. Its text never contains a token or address."""
+
+
+class TelegramError(ChannelError):
+    pass
+
+
+class DiscordError(ChannelError):
+    pass
 
 
 class TelegramClient:
@@ -645,6 +662,11 @@ class TelegramClient:
     logs addresses), and it never puts an address, or a library error that may quote one, into
     a log line or an exception.
     """
+
+    label = "Telegram"
+    pending_key = "telegram_pending"
+    id_field = "telegram_id"
+    max_len = MAX_TELEGRAM_LEN
 
     def __init__(
         self,
@@ -665,6 +687,10 @@ class TelegramClient:
 
     def _scrub(self, text: str) -> str:
         return text.replace(self._token, "<token>") if self._token else text
+
+    def post(self, text: str) -> Any:
+        """Send the text and return the new message's id."""
+        return self.send_message(text).get("message_id")
 
     def send_message(self, text: str) -> dict[str, Any]:
         url = f"{self._api_base}/bot{self._token}/sendMessage"
@@ -715,6 +741,110 @@ class TelegramClient:
         raise TelegramError(f"Telegram could not be reached ({last})")
 
 
+def discord_webhook_address(raw: str) -> Optional[str]:
+    """The webhook address to post to, or None if this is not a Discord webhook address.
+
+    Checking the host means a mistyped secret can never send the posts anywhere else.
+    """
+    try:
+        parts = urlsplit(raw.strip())
+    except ValueError:
+        return None
+    host = (parts.hostname or "").lower()
+    if parts.scheme != "https" or host not in DISCORD_WEBHOOK_HOSTS or parts.port not in (None, 443):
+        return None
+    if parts.username or parts.password or not parts.path.startswith(DISCORD_WEBHOOK_PATH):
+        return None
+    if len([piece for piece in parts.path[len(DISCORD_WEBHOOK_PATH):].split("/") if piece]) < 2:
+        return None
+    # wait=true makes Discord answer with the message it created, so its id can be recorded.
+    query = [(key, value) for key, value in parse_qsl(parts.query) if key != "wait"] + [("wait", "true")]
+    return urlunsplit(("https", host, parts.path, urlencode(query), ""))
+
+
+def discord_escape(text: str) -> str:
+    """Backslash-escape Discord's formatting characters in a name supplied by someone else."""
+    return re.sub(r"([\\*_~`|>\[\]()#<@:-])", r"\\\1", text)
+
+
+class DiscordClient:
+    """Posts messages to one Discord channel through a webhook.
+
+    The webhook address is the secret, so like TelegramClient this class never puts an address,
+    or a library error that may quote one, into a log line or an exception.
+    """
+
+    label = "Discord"
+    pending_key = "discord_pending"
+    id_field = "discord_id"
+    max_len = MAX_DISCORD_LEN
+
+    def __init__(
+        self,
+        *,
+        webhook_url: str,
+        user_agent: str = USER_AGENT,
+        suppress_embeds: bool = False,
+        max_retries: int = 4,
+        session: Any = None,
+    ) -> None:
+        address = discord_webhook_address(webhook_url)
+        if address is None:
+            raise ValueError("not a Discord webhook address")
+        self._address = address
+        self.suppress_embeds = suppress_embeds
+        self.max_retries = max_retries
+        self._session = session or requests.Session()
+        self._session.headers.update({"User-Agent": user_agent})
+
+    def post(self, text: str) -> Any:
+        """Send the text and return the new message's id."""
+        # allowed_mentions with nothing to parse: no text, whoever supplied it, can ping
+        # @everyone, a role or a member.
+        body: dict[str, Any] = {"content": text, "allowed_mentions": {"parse": []}}
+        if self.suppress_embeds:
+            body["flags"] = 4  # no preview card under the block link
+        backoff = 1.0
+        last = "no attempt was made"
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                response = self._session.post(self._address, json=body, timeout=HTTP_TIMEOUT)
+            except requests.RequestException as exc:
+                # The error text can quote the address, so only its type is kept.
+                last = f"network error ({type(exc).__name__})"
+                log.warning("Discord: %s (attempt %s/%s)", last, attempt, self.max_retries)
+                time.sleep(backoff)
+                backoff = min(30.0, backoff * 2)
+                continue
+
+            try:
+                payload = response.json()
+            except ValueError:
+                payload = {}
+            if not isinstance(payload, dict):
+                payload = {}
+            if response.status_code in (200, 204):
+                return payload.get("id")
+
+            # Discord's own error text ("Unknown Webhook", "Invalid Webhook Token") names no address.
+            description = str(payload.get("message") or "no description")[:200]
+            last = f"HTTP {response.status_code}: {description}"
+            if response.status_code == 429 or 500 <= response.status_code < 600:
+                try:
+                    wait = float(payload.get("retry_after") or backoff)
+                except (TypeError, ValueError):
+                    wait = backoff
+                wait = max(1.0, min(30.0, wait))
+                log.warning("Discord: %s (attempt %s/%s); waiting %.0fs", last, attempt, self.max_retries, wait)
+                time.sleep(wait)
+                backoff = min(30.0, backoff * 2)
+                continue
+
+            raise DiscordError(f"Discord refused the message ({last})")
+
+        raise DiscordError(f"Discord could not be reached ({last})")
+
+
 def telegram_from_env() -> Optional[TelegramClient]:
     token = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
     channel = (os.environ.get("TELEGRAM_CHANNEL") or "").strip()
@@ -734,48 +864,89 @@ def telegram_from_env() -> Optional[TelegramClient]:
     )
 
 
-def queue_telegram(state: dict[str, Any], *, block_hash: str, height: int, text: str) -> None:
-    """Remember a block that still has to go to Telegram. It stays queued until it is sent."""
-    pending = [row for row in (state.get("telegram_pending") or []) if isinstance(row, dict)]
+def discord_from_env() -> Optional[DiscordClient]:
+    webhook_url = (os.environ.get("DISCORD_WEBHOOK_URL") or "").strip()
+    if not webhook_url:
+        return None
+    try:
+        return DiscordClient(
+            webhook_url=webhook_url,
+            user_agent=os.environ.get("USER_AGENT", USER_AGENT),
+            suppress_embeds=env_flag("DISCORD_SUPPRESS_EMBEDS", False),
+        )
+    except ValueError:
+        # The value is a secret, so it is not shown.
+        log.warning(
+            "DISCORD_WEBHOOK_URL is not a Discord webhook address (it should start with "
+            "https://discord.com%s); not posting to Discord.",
+            DISCORD_WEBHOOK_PATH,
+        )
+        return None
+
+
+@dataclass
+class Channel:
+    """One extra place a block is posted to, after X: its client and how its text is built."""
+
+    client: Any
+    template: str
+    include_link: bool
+    # Applied to the pool name and coinbase tag, which other people choose.
+    escape: Callable[[str], str] = str
+
+
+def channels_from_env(template: str) -> list[Channel]:
+    """The Telegram and Discord channels that are configured. X's template is the default text."""
+
+    def text_for(name: str) -> str:
+        return os.environ.get(name, template).replace("\\n", "\n")
+
+    channels: list[Channel] = []
+    telegram = telegram_from_env()
+    if telegram is not None:
+        channels.append(Channel(telegram, text_for("TELEGRAM_TEMPLATE"), env_flag("TELEGRAM_INCLUDE_LINK", True)))
+    discord = discord_from_env()
+    if discord is not None:
+        channels.append(Channel(discord, text_for("DISCORD_TEMPLATE"), env_flag("DISCORD_INCLUDE_LINK", True), discord_escape))
+    return channels
+
+
+def queue_post(state: dict[str, Any], channel: Channel, *, block_hash: str, height: int, text: str) -> None:
+    """Remember a block that still has to go to this channel. It stays queued until it is sent."""
+    key, label = channel.client.pending_key, channel.client.label
+    pending = [row for row in (state.get(key) or []) if isinstance(row, dict)]
     if any(row.get("hash") == block_hash for row in pending):
         return
     pending.append({"hash": block_hash, "height": height, "text": text})
-    if len(pending) > MAX_TELEGRAM_PENDING:
-        log.warning("Telegram queue is full; dropping the oldest %s block(s)", len(pending) - MAX_TELEGRAM_PENDING)
-        pending = pending[-MAX_TELEGRAM_PENDING:]
-    state["telegram_pending"] = pending
+    if len(pending) > MAX_PENDING_POSTS:
+        log.warning("%s queue is full; dropping the oldest %s block(s)", label, len(pending) - MAX_PENDING_POSTS)
+        pending = pending[-MAX_PENDING_POSTS:]
+    state[key] = pending
 
 
-def flush_telegram(
-    state: dict[str, Any],
-    state_path: Path,
-    telegram: Optional[TelegramClient],
-    *,
-    save: bool,
-) -> int:
-    """Send queued blocks to Telegram, oldest first. Returns how many are still waiting.
+def flush_channel(state: dict[str, Any], state_path: Path, channel: Channel, *, save: bool) -> int:
+    """Send this channel's queued blocks, oldest first. Returns how many are still waiting.
 
     A failure stops at that block and leaves it queued for the next run. It never raises, so
-    trouble on Telegram cannot hold up or repeat a post on X.
+    trouble on Telegram or Discord cannot hold up or repeat a post anywhere else.
     """
-    if telegram is None:
-        return 0
-    pending = [row for row in (state.get("telegram_pending") or []) if isinstance(row, dict) and row.get("text")]
-    state["telegram_pending"] = pending
+    client = channel.client
+    key, label = client.pending_key, client.label
+    pending = [row for row in (state.get(key) or []) if isinstance(row, dict) and row.get("text")]
+    state[key] = pending
     while pending:
         row = pending[0]
         try:
-            result = telegram.send_message(str(row["text"]))
-        except TelegramError as exc:
-            log.error("Telegram: block %s was not posted and stays queued: %s", row.get("height"), exc)
+            message_id = client.post(str(row["text"]))
+        except ChannelError as exc:
+            log.error("%s: block %s was not posted and stays queued: %s", label, row.get("height"), exc)
             break
-        message_id = result.get("message_id")
-        log.info("Posted Telegram message id=%s for block %s", message_id, row.get("height"))
+        log.info("Posted %s message id=%s for block %s", label, message_id, row.get("height"))
         entry = (state.get("posted") or {}).get(row.get("hash"))
         if isinstance(entry, dict):
-            entry["telegram_id"] = message_id
+            entry[client.id_field] = message_id
         pending = pending[1:]
-        state["telegram_pending"] = pending
+        state[key] = pending
         # Saved after every message, so a later failure cannot make this one go out twice.
         if save:
             save_state(state_path, state)
@@ -979,9 +1150,7 @@ def process(
     include_link: bool,
     seed_counts: dict[str, int],
     seed_height: int,
-    telegram: Optional[TelegramClient] = None,
-    telegram_template: str = DEFAULT_TEMPLATE,
-    telegram_link: bool = True,
+    channels: Optional[list[Channel]] = None,
 ) -> list[dict[str, Any]]:
     posted_now: list[dict[str, Any]] = []
     tip = mempool.tip_height()
@@ -1127,31 +1296,33 @@ def process(
         print(text)
         print("-----------------")
 
-        # The Telegram text names the pool (an X handle means nothing there) and may carry the
-        # block link, which costs nothing on Telegram. A problem with it must not stop the X post.
-        telegram_text: Optional[str] = None
-        if telegram is not None:
+        # Telegram and Discord name the pool (an X handle means nothing there) and may carry the
+        # block link, which costs nothing there. A problem with one must not stop the X post.
+        channel_texts: list[tuple[Channel, str]] = []
+        for channel in channels or []:
+            label = channel.client.label
             try:
-                telegram_text = format_tweet(
-                    template=telegram_template,
-                    pool_name=name,
-                    pool_display=name,
+                channel_text = format_tweet(
+                    template=channel.template,
+                    pool_name=channel.escape(name),
+                    pool_display=channel.escape(name),
                     height=height,
                     block_hash=block_hash,
                     count=count,
                     when=when,
-                    tag=cls.get("matched_text"),
+                    tag=channel.escape(cls.get("matched_text") or "Sv2"),
                     reward=reward,
-                    include_link=telegram_link,
+                    include_link=channel.include_link,
                 )
-                if len(telegram_text) > MAX_TELEGRAM_LEN:
-                    raise ValueError(f"{len(telegram_text)} characters (max {MAX_TELEGRAM_LEN})")
+                if len(channel_text) > channel.client.max_len:
+                    raise ValueError(f"{len(channel_text)} characters (max {channel.client.max_len})")
             except Exception as exc:
-                log.error("Telegram: no message for block %s: %s", height, exc)
-                telegram_text = None
-            if telegram_text is not None and dry_run:
-                print("----- telegram -----")
-                print(telegram_text)
+                log.error("%s: no message for block %s: %s", label, height, exc)
+                continue
+            channel_texts.append((channel, channel_text))
+            if dry_run:
+                print(f"----- {label.lower()} -----")
+                print(channel_text)
                 print("--------------------")
 
         tweet_id = None
@@ -1189,12 +1360,14 @@ def process(
             "ts": ts,
             "tag": cls.get("matched_text"),
         }
-        if telegram_text is not None and not dry_run:
-            queue_telegram(state, block_hash=block_hash, height=height, text=telegram_text)
+        if not dry_run:
+            for channel, channel_text in channel_texts:
+                queue_post(state, channel, block_hash=block_hash, height=height, text=channel_text)
         if save:
             save_state(state_path, state)
         if not dry_run:
-            flush_telegram(state, state_path, telegram, save=save)
+            for channel, _text in channel_texts:
+                flush_channel(state, state_path, channel, save=save)
         posted_now.append(
             {
                 "height": height,
@@ -1301,6 +1474,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--telegram-test",
         action="store_true",
         help="Send one test message to TELEGRAM_CHANNEL and exit. Checks the token and the bot's right to post.",
+    )
+    p.add_argument(
+        "--discord-test",
+        action="store_true",
+        help="Send one test message through DISCORD_WEBHOOK_URL and exit.",
     )
     p.add_argument(
         "--self-test",
@@ -1464,24 +1642,90 @@ def self_test() -> int:
             path = Path(folder) / "state.json"
             state = default_state()
             state["posted"] = {"aa": {"height": 1}, "bb": {"height": 2}}
-            queue_telegram(state, block_hash="aa", height=1, text="first")
-            queue_telegram(state, block_hash="aa", height=1, text="first")
-            queue_telegram(state, block_hash="bb", height=2, text="second")
-            assert [row["hash"] for row in state["telegram_pending"]] == ["aa", "bb"]
             session = FakeSession([ok(21), FakeResponse(400, {"ok": False, "description": "Bad Request: chat not found"})])
-            client = TelegramClient(token=token, chat_id="@channel", session=session)
-            assert flush_telegram(state, path, client, save=True) == 1
+            channel = Channel(TelegramClient(token=token, chat_id="@channel", session=session), DEFAULT_TEMPLATE, True)
+            queue_post(state, channel, block_hash="aa", height=1, text="first")
+            queue_post(state, channel, block_hash="aa", height=1, text="first")
+            queue_post(state, channel, block_hash="bb", height=2, text="second")
+            assert [row["hash"] for row in state["telegram_pending"]] == ["aa", "bb"]
+            assert flush_channel(state, path, channel, save=True) == 1
             assert state["posted"]["aa"]["telegram_id"] == 21
             assert [row["hash"] for row in load_state(path)["telegram_pending"]] == ["bb"]
             session = FakeSession([ok(22)])
-            client = TelegramClient(token=token, chat_id="@channel", session=session)
-            assert flush_telegram(state, path, client, save=True) == 0
+            channel = Channel(TelegramClient(token=token, chat_id="@channel", session=session), DEFAULT_TEMPLATE, True)
+            assert flush_channel(state, path, channel, save=True) == 0
             assert [body["text"] for _url, body in session.sent] == ["second"]
             assert state["posted"]["bb"]["telegram_id"] == 22 and load_state(path)["telegram_pending"] == []
-            assert flush_telegram(state, path, None, save=True) == 0
+
+        # Discord: only a real webhook address is accepted, and it is never shown.
+        hook = "https://discord.com/api/webhooks/123456/SECRET-hook-token"
+        assert discord_webhook_address(hook) == hook + "?wait=true"
+        assert discord_webhook_address(hook + "?thread_id=9&wait=false") == hook + "?thread_id=9&wait=true"
+        assert discord_webhook_address("https://discordapp.com/api/webhooks/1/abc") is not None
+        for bad in (
+            "",
+            "http://discord.com/api/webhooks/1/abc",
+            "https://discord.com.example.org/api/webhooks/1/abc",
+            "https://example.org/api/webhooks/1/abc",
+            "https://user@discord.com/api/webhooks/1/abc",
+            "https://discord.com:8443/api/webhooks/1/abc",
+            "https://discord.com/api/webhooks/1",
+            "https://discord.gg/abcdef",
+        ):
+            assert discord_webhook_address(bad) is None, bad
+        try:
+            DiscordClient(webhook_url="https://example.org/api/webhooks/1/abc")
+            raise AssertionError("a foreign address must be refused")
+        except ValueError as exc:
+            assert "example.org" not in str(exc)
+
+        session = FakeSession([FakeResponse(200, {"id": "9001"})])
+        client = DiscordClient(webhook_url=hook, session=session)
+        assert client.post("hello") == "9001"
+        assert session.sent == [(hook + "?wait=true", {"content": "hello", "allowed_mentions": {"parse": []}})]
+        session = FakeSession([FakeResponse(200, {"id": "9002"})])
+        assert DiscordClient(webhook_url=hook, session=session, suppress_embeds=True).post("hello") == "9002"
+        assert session.sent[0][1]["flags"] == 4
+
+        session = FakeSession([FakeResponse(404, {"message": "Unknown Webhook", "code": 10015})])
+        client = DiscordClient(webhook_url=hook, session=session)
+        try:
+            client.post("hello")
+            raise AssertionError("a refusal must raise")
+        except DiscordError as exc:
+            assert "404" in str(exc) and "SECRET-hook-token" not in str(exc), str(exc)
+        assert len(session.sent) == 1
+
+        session = FakeSession([FakeResponse(429, {"message": "You are being rate limited.", "retry_after": 0.4}), FakeResponse(503, None), requests.ConnectionError(hook), FakeResponse(200, {"id": "9003"})])
+        assert DiscordClient(webhook_url=hook, session=session).post("hello") == "9003"
+        session = FakeSession([requests.ConnectionError(hook)] * 4)
+        try:
+            DiscordClient(webhook_url=hook, session=session).post("hello")
+            raise AssertionError("an unreachable service must raise")
+        except DiscordError as exc:
+            assert "SECRET-hook-token" not in str(exc) and "ConnectionError" in str(exc), str(exc)
+
+        # Names chosen by other people cannot format, link or mention anything on Discord.
+        assert discord_escape("MARA Pool") == "MARA Pool"
+        assert discord_escape("[free](https://x.example) **@everyone** <@1>") == "\\[free\\]\\(https\\://x.example\\) \\*\\*\\@everyone\\*\\* \\<\\@1\\>"
+
+        # Telegram and Discord keep separate queues: one failing does not hold up the other.
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "state.json"
+            state = default_state()
+            state["posted"] = {"aa": {"height": 1}}
+            tg = Channel(TelegramClient(token=token, chat_id="@channel", session=FakeSession([FakeResponse(403, {"ok": False, "description": "Forbidden"})])), DEFAULT_TEMPLATE, True)
+            dc = Channel(DiscordClient(webhook_url=hook, session=FakeSession([FakeResponse(200, {"id": "9100"})])), DEFAULT_TEMPLATE, True, discord_escape)
+            for channel in (tg, dc):
+                queue_post(state, channel, block_hash="aa", height=1, text="block")
+            assert flush_channel(state, path, tg, save=True) == 1
+            assert flush_channel(state, path, dc, save=True) == 0
+            saved = load_state(path)
+            assert [row["hash"] for row in saved["telegram_pending"]] == ["aa"] and saved["discord_pending"] == []
+            assert saved["posted"]["aa"]["discord_id"] == "9100" and "telegram_id" not in saved["posted"]["aa"]
     finally:
         time.sleep = real_sleep
-    print("  [ok] Telegram sending, retries, queue and token handling")
+    print("  [ok] Telegram and Discord: sending, retries, queues, and keeping secrets out of messages")
 
     if failures:
         print(f"{failures} self-test failure(s)")
@@ -1490,18 +1734,17 @@ def self_test() -> int:
     return 0
 
 
-def telegram_test() -> int:
-    """Send one message to the channel, to check the token and the bot's right to post."""
-    telegram = telegram_from_env()
-    if telegram is None:
-        log.error("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHANNEL first.")
+def channel_test(client: Any, missing: str) -> int:
+    """Send one message to the channel, to check that posting there works."""
+    if client is None:
+        log.error("Set %s first.", missing)
         return 2
     try:
-        result = telegram.send_message(TELEGRAM_TEST_TEXT)
-    except TelegramError as exc:
-        log.error("Telegram test failed: %s", exc)
+        message_id = client.post(CONNECTED_TEXT)
+    except ChannelError as exc:
+        log.error("%s test failed: %s", client.label, exc)
         return 1
-    log.info("Telegram test message sent to %s (message id=%s)", telegram.chat_id, result.get("message_id"))
+    log.info("%s test message sent (message id=%s)", client.label, message_id)
     return 0
 
 
@@ -1571,13 +1814,12 @@ def run_once(args: argparse.Namespace) -> int:
         seed_counts = parse_seed_counts(os.environ.get("SV2_SEED_COUNTS", DEFAULT_SEED_COUNTS))
         seed_height = int(os.environ.get("SV2_SEED_HEIGHT", str(DEFAULT_SEED_HEIGHT)))
 
-        telegram = telegram_from_env()
-        telegram_template = os.environ.get("TELEGRAM_TEMPLATE", template).replace("\\n", "\n")
-        telegram_link = env_flag("TELEGRAM_INCLUDE_LINK", True)
+        channels = channels_from_env(template)
         save = not args.no_save_state
-        # Blocks an earlier run could not get onto Telegram go out first.
+        # Blocks an earlier run could not get onto Telegram or Discord go out first.
         if not dry_run:
-            flush_telegram(state, state_path, telegram, save=save)
+            for channel in channels:
+                flush_channel(state, state_path, channel, save=save)
 
         posted = process(
             mempool=mempool,
@@ -1596,20 +1838,20 @@ def run_once(args: argparse.Namespace) -> int:
             include_link=include_link,
             seed_counts=seed_counts,
             seed_height=seed_height,
-            telegram=telegram,
-            telegram_template=telegram_template,
-            telegram_link=telegram_link,
+            channels=channels,
         )
         if posted:
             log.info("Emitted %s tweet(s)", len(posted))
         else:
             log.info("No new SV2 blocks to post")
-        waiting = len(state.get("telegram_pending") or []) if telegram is not None and not dry_run else 0
-        if waiting:
-            # X is done and the state is saved; the run is marked failed so the trouble is noticed.
-            log.error("%s block(s) are still waiting to be posted to Telegram; the next run retries.", waiting)
-            return 1
-        return 0
+        behind = False
+        for channel in [] if dry_run else channels:
+            waiting = len(state.get(channel.client.pending_key) or [])
+            if waiting:
+                # X is done and the state is saved; the run is marked failed so the trouble is noticed.
+                log.error("%s block(s) are still waiting to be posted to %s; the next run retries.", waiting, channel.client.label)
+                behind = True
+        return 1 if behind else 0
     finally:
         lock_fh.close()
 
@@ -1625,7 +1867,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.self_test:
         return self_test()
     if args.telegram_test:
-        return telegram_test()
+        return channel_test(telegram_from_env(), "TELEGRAM_BOT_TOKEN and TELEGRAM_CHANNEL")
+    if args.discord_test:
+        return channel_test(discord_from_env(), "DISCORD_WEBHOOK_URL")
 
     if args.loop:
         log.info("Loop mode, interval=%ss, dry_run=%s", args.interval, args.dry_run)
