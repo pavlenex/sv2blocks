@@ -5,6 +5,7 @@ import { createChart } from './chart';
 import { loadChunk, loadSummary, parseSummary } from './data';
 import { fmtAgo, fmtBtc, fmtClock, fmtDay, fmtInt, fmtPercent } from './format';
 import { createGrid, type GridSource } from './grid';
+import { initHelp } from './help';
 import { RANGES, chartInput, describeRange, firstAtOrAbove } from './range';
 import { boardItems, boardRows } from './board';
 import type { BlockChunk, BlockInfo, RangeKey, Summary, Sv2Block, Theme, Unit } from './types';
@@ -385,37 +386,7 @@ function buildLinks() {
 $('site-title').textContent = config.title;
 buildLinks();
 
-for (const help of document.querySelectorAll<HTMLDetailsElement>('.metric-help')) {
-  let previewing = false;
-  const close = () => {
-    previewing = false;
-    help.open = false;
-  };
-
-  help.addEventListener('pointerenter', (event) => {
-    if (event.pointerType !== 'mouse' || help.open) return;
-    previewing = true;
-    help.open = true;
-  });
-
-  help.addEventListener('pointerleave', () => {
-    if (previewing) close();
-  });
-
-  help.querySelector('summary')?.addEventListener('click', (event) => {
-    if (!previewing) return;
-    event.preventDefault();
-    previewing = false;
-  });
-
-  document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && help.open) close();
-  });
-
-  document.addEventListener('pointerdown', (event) => {
-    if (help.open && event.target instanceof Node && !help.contains(event.target)) close();
-  });
-}
+initHelp();
 
 $('grid').addEventListener('pointerenter', prefetchDetails);
 $('grid').addEventListener('focus', prefetchDetails);

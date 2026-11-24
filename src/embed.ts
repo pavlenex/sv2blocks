@@ -11,6 +11,7 @@ import { boardItems, boardRows } from './board';
 import { createChart } from './chart';
 import { loadSummary, parseSummary } from './data';
 import { fmtInt } from './format';
+import { initHelp } from './help';
 import { RANGES, blocksInRange, chartInput, describeRange } from './range';
 import type { RangeKey, Summary, Unit } from './types';
 
@@ -81,6 +82,8 @@ function finishLoading() {
 function renderBlocks(data: Summary) {
   const inRange = blocksInRange(data, options.range);
   $('total').textContent = fmtInt(data.sv2.length);
+  $('tracked-scope').textContent = `since block ${fmtInt(data.start)}`;
+  $('tracking-help').hidden = false;
   $('hero-change').hidden = options.range === 'ALL';
   $('delta').textContent = `${fmtInt(inRange.length)} ${inRange.length === 1 ? 'block' : 'blocks'}`;
   $('delta').classList.toggle('flat', inRange.length === 0);
@@ -172,6 +175,7 @@ if (options.followSystem) {
 // Only the chosen widget stays in the page.
 $(options.widget === 'blocks' ? 'widget-leaderboard' : 'widget-blocks').remove();
 
+initHelp();
 window.addEventListener('resize', reportHeight);
 // Text can change size once the fonts arrive.
 void document.fonts?.ready.then(reportHeight);

@@ -14,7 +14,13 @@
     <!-- One widget per page, chosen with ?widget=blocks or ?widget=leaderboard. See embeds.html. -->
     <main class="card glass hero widget" id="widget-blocks" aria-labelledby="hero-title">
       <div class="hero-head">
-        <h1 class="hero-label" id="hero-title">Stratum V2 blocks</h1>
+        <div class="metric-heading">
+          <h1 class="hero-label" id="hero-title">Stratum V2 blocks</h1>
+          <details class="metric-help" id="tracking-help" hidden>
+            <summary aria-label="Tracking start block"><span aria-hidden="true">i</span></summary>
+            <p class="metric-help-panel" id="tracked-scope"></p>
+          </details>
+        </div>
         <p class="hero-number" id="total">–</p>
         <p class="hero-change" id="hero-change" hidden>
           <span class="chip" id="delta"></span>
