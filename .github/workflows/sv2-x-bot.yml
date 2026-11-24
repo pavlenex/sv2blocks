@@ -105,7 +105,9 @@ jobs:
         run: python sv2_bot.py --discord-test
 
       # The keys exist only in this step's environment. Nothing here echoes the environment.
+      # A run started by hand to send a test message only tests: it does not also look for blocks.
       - name: Run bot
+        if: ${{ !(github.event_name == 'workflow_dispatch' && (inputs.telegram_test || inputs.discord_test)) }}
         working-directory: repo/bot
         env:
           X_API_KEY: ${{ secrets.X_API_KEY }}

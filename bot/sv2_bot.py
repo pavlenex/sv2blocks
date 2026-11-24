@@ -68,6 +68,9 @@ MAX_DISCORD_LEN = 2000
 # Blocks waiting for Telegram or Discord are kept in state.json; this caps each queue if the
 # service stays unreachable or misconfigured for a long time.
 MAX_PENDING_POSTS = 50
+# A rate limit is waited out in full. If the service asks for longer than this, the message is
+# left queued for the next run instead of being retried too early.
+MAX_RATE_LIMIT_WAIT = 60.0
 CONNECTED_TEXT = "sv2blocks is connected. New Stratum V2 blocks will be posted here."
 # A Discord webhook address is only ever one of these hosts followed by this path.
 DISCORD_WEBHOOK_HOSTS = ("discord.com", "discordapp.com", "canary.discord.com", "ptb.discord.com")
@@ -655,6 +658,25 @@ class DiscordError(ChannelError):
     pass
 
 
+def retry_wait(label: str, error: type, status: int, asked: Any, backoff: float) -> float:
+    """How long to wait before the next attempt after a 429 or a server error.
+
+    A rate limit (429) is honoured in full: retrying before it has passed only earns another
+    refusal. If the service asks for more than MAX_RATE_LIMIT_WAIT the attempt ends here and the
+    message stays queued for the next run.
+    """
+    if status != 429:
+        return max(1.0, min(30.0, backoff))
+    try:
+        seconds = float(asked)
+    except (TypeError, ValueError):
+        seconds = backoff
+    if seconds > MAX_RATE_LIMIT_WAIT:
+        raise error(f"{label} is rate limiting and asked to wait {seconds:.0f}s; left for the next run")
+    # A little longer than asked, so the retry does not land on the boundary.
+    return max(1.0, seconds + 0.5)
+
+
 class TelegramClient:
     """Posts plain-text messages to one Telegram channel through the Bot API.
 
@@ -723,14 +745,9 @@ class TelegramClient:
             description = self._scrub(str(payload.get("description") or "no description"))[:200]
             last = f"HTTP {response.status_code}: {description}"
             if response.status_code == 429 or 500 <= response.status_code < 600:
-                wait = backoff
                 parameters = payload.get("parameters")
-                if isinstance(parameters, dict):
-                    try:
-                        wait = float(parameters.get("retry_after") or backoff)
-                    except (TypeError, ValueError):
-                        wait = backoff
-                wait = max(1.0, min(30.0, wait))
+                asked = parameters.get("retry_after") if isinstance(parameters, dict) else None
+                wait = retry_wait("Telegram", TelegramError, response.status_code, asked, backoff)
                 log.warning("Telegram: %s (attempt %s/%s); waiting %.0fs", last, attempt, self.max_retries, wait)
                 time.sleep(wait)
                 backoff = min(30.0, backoff * 2)
@@ -824,17 +841,18 @@ class DiscordClient:
             if not isinstance(payload, dict):
                 payload = {}
             if response.status_code in (200, 204):
+                # Both mean Discord took the message. With wait=true it answers 200 and the
+                # message; if the id is ever missing the post is still treated as sent, because
+                # sending it again would put a duplicate in the channel.
+                if payload.get("id") is None:
+                    log.warning("Discord accepted the message (HTTP %s) but did not return its id", response.status_code)
                 return payload.get("id")
 
             # Discord's own error text ("Unknown Webhook", "Invalid Webhook Token") names no address.
             description = str(payload.get("message") or "no description")[:200]
             last = f"HTTP {response.status_code}: {description}"
             if response.status_code == 429 or 500 <= response.status_code < 600:
-                try:
-                    wait = float(payload.get("retry_after") or backoff)
-                except (TypeError, ValueError):
-                    wait = backoff
-                wait = max(1.0, min(30.0, wait))
+                wait = retry_wait("Discord", DiscordError, response.status_code, payload.get("retry_after"), backoff)
                 log.warning("Discord: %s (attempt %s/%s); waiting %.0fs", last, attempt, self.max_retries, wait)
                 time.sleep(wait)
                 backoff = min(30.0, backoff * 2)
@@ -1473,12 +1491,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--telegram-test",
         action="store_true",
-        help="Send one test message to TELEGRAM_CHANNEL and exit. Checks the token and the bot's right to post.",
+        help="Send one real test message to TELEGRAM_CHANNEL and exit. Checks the token and the bot's right to post. Cannot be combined with --dry-run.",
     )
     p.add_argument(
         "--discord-test",
         action="store_true",
-        help="Send one test message through DISCORD_WEBHOOK_URL and exit.",
+        help="Send one real test message through DISCORD_WEBHOOK_URL and exit. Cannot be combined with --dry-run.",
     )
     p.add_argument(
         "--self-test",
@@ -1727,6 +1745,50 @@ def self_test() -> int:
         time.sleep = real_sleep
     print("  [ok] Telegram and Discord: sending, retries, queues, and keeping secrets out of messages")
 
+    # A rate limit is waited out in full, or the message is left for the next run.
+    assert retry_wait("Discord", DiscordError, 429, 2, 1.0) == 2.5
+    assert retry_wait("Discord", DiscordError, 429, MAX_RATE_LIMIT_WAIT, 1.0) == MAX_RATE_LIMIT_WAIT + 0.5
+    assert retry_wait("Discord", DiscordError, 429, None, 4.0) == 4.5
+    assert retry_wait("Discord", DiscordError, 503, 900, 2.0) == 2.0
+    for client_error, asked in ((DiscordError, MAX_RATE_LIMIT_WAIT + 1), (TelegramError, 3600)):
+        try:
+            retry_wait("Service", client_error, 429, asked, 1.0)
+            raise AssertionError("a long rate limit must end the attempt")
+        except ChannelError as exc:
+            assert isinstance(exc, client_error) and "next run" in str(exc)
+    slept: list[float] = []
+    time.sleep = slept.append
+    try:
+        session = FakeSession([FakeResponse(429, {"message": "You are being rate limited.", "retry_after": 12}), FakeResponse(200, {"id": "1"})])
+        assert DiscordClient(webhook_url=hook, session=session).post("hello") == "1" and slept == [12.5], slept
+        session = FakeSession([FakeResponse(429, {"message": "You are being rate limited.", "retry_after": 600})])
+        try:
+            DiscordClient(webhook_url=hook, session=session).post("hello")
+            raise AssertionError("a long rate limit must end the attempt")
+        except DiscordError:
+            assert len(session.sent) == 1 and slept == [12.5]
+        session = FakeSession([FakeResponse(429, {"ok": False, "parameters": {"retry_after": 35}}), ok(31)])
+        assert TelegramClient(token=token, chat_id="@channel", session=session).send_message("hi") == {"message_id": 31} and slept[-1] == 35.5
+        # An accepted message without an id counts as sent: sending it again would duplicate it.
+        assert DiscordClient(webhook_url=hook, session=FakeSession([FakeResponse(204, None)])).post("hello") is None
+    finally:
+        time.sleep = real_sleep
+    print("  [ok] rate limits are honoured in full or left for the next run")
+
+    # --verbose must not let the HTTP or OAuth libraries log addresses or signing details.
+    levels = {name: logging.getLogger(name).level for name in ("urllib3", "requests", "requests_oauthlib", "oauthlib")}
+    own_level = log.level
+    try:
+        configure_logging(True)
+        assert log.isEnabledFor(logging.DEBUG)
+        for name in ("urllib3.connectionpool", "requests", "requests_oauthlib.oauth1_auth", "oauthlib.oauth1.rfc5849"):
+            assert not logging.getLogger(name).isEnabledFor(logging.INFO), name
+    finally:
+        log.setLevel(own_level)
+        for name, level in levels.items():
+            logging.getLogger(name).setLevel(level)
+    print("  [ok] verbose logging keeps library request logs off")
+
     if failures:
         print(f"{failures} self-test failure(s)")
         return 1
@@ -1856,20 +1918,40 @@ def run_once(args: argparse.Namespace) -> int:
         lock_fh.close()
 
 
-def main(argv: Optional[list[str]] = None) -> int:
-    args = build_parser().parse_args(argv)
-    load_env_file(args.env_file)
+def configure_logging(verbose: bool) -> None:
+    """--verbose turns on this script's own debug lines, and only those.
+
+    The HTTP and OAuth libraries write each request's address and its signing details at debug
+    level. Those contain the Telegram token, the Discord webhook address and X signing material,
+    so the libraries are never allowed below WARNING, whatever the script's own level is.
+    """
     logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
+        level=logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
+    log.setLevel(logging.DEBUG if verbose else logging.INFO)
+    for library in ("urllib3", "requests", "requests_oauthlib", "oauthlib"):
+        logging.getLogger(library).setLevel(logging.WARNING)
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if (args.telegram_test or args.discord_test) and (args.dry_run or args.loop):
+        # A test sends a real message, so it must never be mistaken for a run that sends nothing.
+        parser.error("--telegram-test and --discord-test send a real message and cannot be combined with --dry-run or --loop")
+    load_env_file(args.env_file)
+    configure_logging(args.verbose)
     if args.self_test:
         return self_test()
-    if args.telegram_test:
-        return channel_test(telegram_from_env(), "TELEGRAM_BOT_TOKEN and TELEGRAM_CHANNEL")
-    if args.discord_test:
-        return channel_test(discord_from_env(), "DISCORD_WEBHOOK_URL")
+    if args.telegram_test or args.discord_test:
+        codes = []
+        if args.telegram_test:
+            codes.append(channel_test(telegram_from_env(), "TELEGRAM_BOT_TOKEN and TELEGRAM_CHANNEL"))
+        if args.discord_test:
+            codes.append(channel_test(discord_from_env(), "DISCORD_WEBHOOK_URL"))
+        return max(codes)
 
     if args.loop:
         log.info("Loop mode, interval=%ss, dry_run=%s", args.interval, args.dry_run)
