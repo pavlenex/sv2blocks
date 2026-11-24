@@ -2,6 +2,7 @@
 //   embed.html?widget=blocks        the block count with its growth chart (default)
 //   embed.html?widget=leaderboard   pools ranked by Stratum V2 revenue
 // Options: theme=dark|light|auto, range=24h|1w|1m|all, unit=btc|usd, rows=1..10, link=0.
+// Messages: the widget sends sv2blocks:ready and sv2blocks:height to the page, and accepts sv2blocks:theme.
 // Like the dashboard, it reads only this site's own data files and never turns text into HTML.
 import '@fontsource-variable/inter/wght.css';
 import '@fontsource-variable/jetbrains-mono/wght.css';
@@ -166,9 +167,23 @@ document.getElementById('unit')?.addEventListener('click', (event) => {
   render();
 });
 
+// The embedding page can switch the theme without reloading the frame, by sending
+// { type: 'sv2blocks:theme', theme: 'dark' | 'light' }. Only those two values do anything, so any
+// embedding page may send it. After that the page is in charge and the system setting is ignored.
+let themeFromPage = false;
+window.addEventListener('message', (event) => {
+  if (event.source !== window.parent || window.parent === window) return;
+  const data: unknown = event.data;
+  if (typeof data !== 'object' || data === null || (data as { type?: unknown }).type !== 'sv2blocks:theme') return;
+  const theme = (data as { theme?: unknown }).theme;
+  if (theme !== 'dark' && theme !== 'light') return;
+  themeFromPage = true;
+  document.documentElement.setAttribute('data-theme', theme);
+});
+
 if (options.followSystem) {
   window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', (event) => {
-    document.documentElement.setAttribute('data-theme', event.matches ? 'light' : 'dark');
+    if (!themeFromPage) document.documentElement.setAttribute('data-theme', event.matches ? 'light' : 'dark');
   });
 }
 
@@ -176,6 +191,8 @@ if (options.followSystem) {
 $(options.widget === 'blocks' ? 'widget-leaderboard' : 'widget-blocks').remove();
 
 initHelp();
+// Tells the embedding page that theme messages will now be heard.
+if (window.parent !== window) window.parent.postMessage({ type: 'sv2blocks:ready', widget: options.widget }, '*');
 window.addEventListener('resize', reportHeight);
 // Text can change size once the fonts arrive.
 void document.fonts?.ready.then(reportHeight);

@@ -28,6 +28,6 @@ Two tiles can be shown on other sites in an `<iframe>`: the block count with its
 <iframe src="https://sv2blocks.com/embed.html?widget=blocks&amp;theme=dark" title="Stratum V2 blocks" width="100%" height="420" loading="lazy" style="border:0;border-radius:24px;display:block"></iframe>
 ```
 
-Options go in the address: `widget` (`blocks`, `leaderboard`), `theme` (`dark`, `light`, `auto`), `range` (`24h`, `1w`, `1m`, `all`), `unit` (`btc`, `usd`), `rows` (1 to 10) and `link=0` to hide the link back. A widget reads the same data files as the dashboard and updates by itself. The embedding page must be able to frame this site, and a page served over https can only frame an https address.
+Options go in the address: `widget` (`blocks`, `leaderboard`), `theme` (`dark`, `light`, `auto`), `range` (`24h`, `1w`, `1m`, `all`), `unit` (`btc`, `usd`), `rows` (1 to 10) and `link=0` to hide the link back. A widget reads the same data files as the dashboard and updates by itself. To change the theme of a widget that is already showing, without reloading it, the embedding page can send it `{ type: 'sv2blocks:theme', theme: 'dark' }` (or `'light'`) with `postMessage` once the widget has sent `sv2blocks:ready`. The embedding page must be able to frame this site, and a page served over https can only frame an https address.
 
 [MIT license](LICENSE)
