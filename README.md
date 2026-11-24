@@ -1,6 +1,6 @@
 # sv2blocks
 
-Tracks Bitcoin blocks mined with Stratum V2. The new blocks are also posted on X by [@sv2blocks](https://x.com/sv2blocks). T
+Tracks Bitcoin blocks mined with Stratum V2. The new blocks are also posted on X by [@sv2blocks](https://x.com/sv2blocks) and can be tracked on [Telegram](https://t.me/+LZeFAU3jydQxZGY0).
 
 ## Run locally
 

@@ -6,6 +6,9 @@ coinbase scriptsig) to printable ASCII and look for an Sv2 / Stratum V2
 tag. A bare "v2" is not enough — random extranonce bytes can spell that
 by chance.
 
+The same blocks can also be posted to a Telegram channel: set
+TELEGRAM_BOT_TOKEN and TELEGRAM_CHANNEL (see README.md).
+
 This script never posts unless it is given X API user-context credentials
 and is run without --dry-run. First run without --backfill-hours only
 initialises state at the current tip so it will not dump a backlog of
@@ -40,6 +43,7 @@ log = logging.getLogger("sv2-x-bot")
 
 DEFAULT_MEMPOOL = "https://mempool.space"
 DEFAULT_TWEET_API = "https://api.x.com/2/tweets"
+DEFAULT_TELEGRAM_API = "https://api.telegram.org"
 DEFAULT_TEMPLATE = (
     "Stratum V2 block #{height} mined by\n"
     "{pool}\n"
@@ -56,6 +60,11 @@ PAGE_SLEEP = 0.4
 HTTP_TIMEOUT = 30
 USER_AGENT = "sv2-x-bot/1.0"
 MAX_TWEET_LEN = 280
+MAX_TELEGRAM_LEN = 4096
+# Blocks waiting for Telegram are kept in state.json; this caps the queue if Telegram stays
+# unreachable or misconfigured for a long time.
+MAX_TELEGRAM_PENDING = 50
+TELEGRAM_TEST_TEXT = "sv2blocks is connected. New Stratum V2 blocks will be posted here."
 
 # Known coinbaseRaw values from the recap, used by --self-test.
 FIXTURE_977145 = (
@@ -527,6 +536,7 @@ def default_state() -> dict[str, Any]:
         "seed_height": None,
         "posted": {},
         "recent": [],
+        "telegram_pending": [],
     }
 
 
@@ -540,6 +550,8 @@ def load_state(path: Path) -> dict[str, Any]:
     state.setdefault("pool_counts", {})
     state.setdefault("posted", {})
     state.setdefault("recent", [])
+    if not isinstance(state.get("telegram_pending"), list):
+        state["telegram_pending"] = []
     # JSON keys are strings; keep posted keys as hashes (strings).
     state["pool_counts"] = {str(k): int(v) for k, v in state["pool_counts"].items()}
     return state
@@ -616,6 +628,158 @@ class XClient:
             respect_reset=True,
         )
         return response.json()
+
+
+# ---------------------------------------------------------------------------
+# Telegram
+# ---------------------------------------------------------------------------
+
+class TelegramError(RuntimeError):
+    """A message Telegram did not accept. Its text never contains the bot token."""
+
+
+class TelegramClient:
+    """Posts plain-text messages to one Telegram channel through the Bot API.
+
+    The bot token is part of the request address. So this class does not use HttpClient (which
+    logs addresses), and it never puts an address, or a library error that may quote one, into
+    a log line or an exception.
+    """
+
+    def __init__(
+        self,
+        *,
+        token: str,
+        chat_id: str,
+        user_agent: str = USER_AGENT,
+        api_base: str = DEFAULT_TELEGRAM_API,
+        max_retries: int = 4,
+        session: Any = None,
+    ) -> None:
+        self._token = token
+        self.chat_id = chat_id
+        self._api_base = api_base.rstrip("/")
+        self.max_retries = max_retries
+        self._session = session or requests.Session()
+        self._session.headers.update({"User-Agent": user_agent})
+
+    def _scrub(self, text: str) -> str:
+        return text.replace(self._token, "<token>") if self._token else text
+
+    def send_message(self, text: str) -> dict[str, Any]:
+        url = f"{self._api_base}/bot{self._token}/sendMessage"
+        # No parse_mode: pool names and coinbase tags are chosen by miners, so the text is sent
+        # as plain text and Telegram only turns the block address into a link.
+        body = {"chat_id": self.chat_id, "text": text}
+        backoff = 1.0
+        last = "no attempt was made"
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                response = self._session.post(url, json=body, timeout=HTTP_TIMEOUT)
+            except requests.RequestException as exc:
+                # The error text can quote the address, so only its type is kept.
+                last = f"network error ({type(exc).__name__})"
+                log.warning("Telegram: %s (attempt %s/%s)", last, attempt, self.max_retries)
+                time.sleep(backoff)
+                backoff = min(30.0, backoff * 2)
+                continue
+
+            try:
+                payload = response.json()
+            except ValueError:
+                payload = {}
+            if not isinstance(payload, dict):
+                payload = {}
+            if response.status_code == 200 and payload.get("ok") is True:
+                result = payload.get("result")
+                return result if isinstance(result, dict) else {}
+
+            description = self._scrub(str(payload.get("description") or "no description"))[:200]
+            last = f"HTTP {response.status_code}: {description}"
+            if response.status_code == 429 or 500 <= response.status_code < 600:
+                wait = backoff
+                parameters = payload.get("parameters")
+                if isinstance(parameters, dict):
+                    try:
+                        wait = float(parameters.get("retry_after") or backoff)
+                    except (TypeError, ValueError):
+                        wait = backoff
+                wait = max(1.0, min(30.0, wait))
+                log.warning("Telegram: %s (attempt %s/%s); waiting %.0fs", last, attempt, self.max_retries, wait)
+                time.sleep(wait)
+                backoff = min(30.0, backoff * 2)
+                continue
+
+            raise TelegramError(f"Telegram refused the message ({last})")
+
+        raise TelegramError(f"Telegram could not be reached ({last})")
+
+
+def telegram_from_env() -> Optional[TelegramClient]:
+    token = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
+    channel = (os.environ.get("TELEGRAM_CHANNEL") or "").strip()
+    if not token and not channel:
+        return None
+    if not token or not channel:
+        log.warning(
+            "Telegram is half configured (%s is missing); not posting to Telegram.",
+            "TELEGRAM_BOT_TOKEN" if not token else "TELEGRAM_CHANNEL",
+        )
+        return None
+    return TelegramClient(
+        token=token,
+        chat_id=channel,
+        user_agent=os.environ.get("USER_AGENT", USER_AGENT),
+        api_base=os.environ.get("TELEGRAM_API", DEFAULT_TELEGRAM_API),
+    )
+
+
+def queue_telegram(state: dict[str, Any], *, block_hash: str, height: int, text: str) -> None:
+    """Remember a block that still has to go to Telegram. It stays queued until it is sent."""
+    pending = [row for row in (state.get("telegram_pending") or []) if isinstance(row, dict)]
+    if any(row.get("hash") == block_hash for row in pending):
+        return
+    pending.append({"hash": block_hash, "height": height, "text": text})
+    if len(pending) > MAX_TELEGRAM_PENDING:
+        log.warning("Telegram queue is full; dropping the oldest %s block(s)", len(pending) - MAX_TELEGRAM_PENDING)
+        pending = pending[-MAX_TELEGRAM_PENDING:]
+    state["telegram_pending"] = pending
+
+
+def flush_telegram(
+    state: dict[str, Any],
+    state_path: Path,
+    telegram: Optional[TelegramClient],
+    *,
+    save: bool,
+) -> int:
+    """Send queued blocks to Telegram, oldest first. Returns how many are still waiting.
+
+    A failure stops at that block and leaves it queued for the next run. It never raises, so
+    trouble on Telegram cannot hold up or repeat a post on X.
+    """
+    if telegram is None:
+        return 0
+    pending = [row for row in (state.get("telegram_pending") or []) if isinstance(row, dict) and row.get("text")]
+    state["telegram_pending"] = pending
+    while pending:
+        row = pending[0]
+        try:
+            result = telegram.send_message(str(row["text"]))
+        except TelegramError as exc:
+            log.error("Telegram: block %s was not posted and stays queued: %s", row.get("height"), exc)
+            break
+        message_id = result.get("message_id")
+        log.info("Posted Telegram message id=%s for block %s", message_id, row.get("height"))
+        entry = (state.get("posted") or {}).get(row.get("hash"))
+        if isinstance(entry, dict):
+            entry["telegram_id"] = message_id
+        pending = pending[1:]
+        state["telegram_pending"] = pending
+        # Saved after every message, so a later failure cannot make this one go out twice.
+        if save:
+            save_state(state_path, state)
+    return len(pending)
 
 
 # ---------------------------------------------------------------------------
@@ -815,6 +979,9 @@ def process(
     include_link: bool,
     seed_counts: dict[str, int],
     seed_height: int,
+    telegram: Optional[TelegramClient] = None,
+    telegram_template: str = DEFAULT_TEMPLATE,
+    telegram_link: bool = True,
 ) -> list[dict[str, Any]]:
     posted_now: list[dict[str, Any]] = []
     tip = mempool.tip_height()
@@ -960,6 +1127,33 @@ def process(
         print(text)
         print("-----------------")
 
+        # The Telegram text names the pool (an X handle means nothing there) and may carry the
+        # block link, which costs nothing on Telegram. A problem with it must not stop the X post.
+        telegram_text: Optional[str] = None
+        if telegram is not None:
+            try:
+                telegram_text = format_tweet(
+                    template=telegram_template,
+                    pool_name=name,
+                    pool_display=name,
+                    height=height,
+                    block_hash=block_hash,
+                    count=count,
+                    when=when,
+                    tag=cls.get("matched_text"),
+                    reward=reward,
+                    include_link=telegram_link,
+                )
+                if len(telegram_text) > MAX_TELEGRAM_LEN:
+                    raise ValueError(f"{len(telegram_text)} characters (max {MAX_TELEGRAM_LEN})")
+            except Exception as exc:
+                log.error("Telegram: no message for block %s: %s", height, exc)
+                telegram_text = None
+            if telegram_text is not None and dry_run:
+                print("----- telegram -----")
+                print(telegram_text)
+                print("--------------------")
+
         tweet_id = None
         if dry_run:
             tweet_id = "dry-run"
@@ -995,8 +1189,12 @@ def process(
             "ts": ts,
             "tag": cls.get("matched_text"),
         }
+        if telegram_text is not None and not dry_run:
+            queue_telegram(state, block_hash=block_hash, height=height, text=telegram_text)
         if save:
             save_state(state_path, state)
+        if not dry_run:
+            flush_telegram(state, state_path, telegram, save=save)
         posted_now.append(
             {
                 "height": height,
@@ -1100,6 +1298,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to a .env file. Defaults to .env next to this script, then cwd.",
     )
     p.add_argument(
+        "--telegram-test",
+        action="store_true",
+        help="Send one test message to TELEGRAM_CHANNEL and exit. Checks the token and the bot's right to post.",
+    )
+    p.add_argument(
         "--self-test",
         action="store_true",
         help="Run local detection fixtures and exit (no network, no posts).",
@@ -1200,10 +1403,105 @@ def self_test() -> int:
     assert not is_duplicate_post_error(RuntimeError('HTTP 401 from https://api.x.com/2/tweets: duplicate'))
     print("  [ok] duplicate-post refusal is recognised")
 
+    # Telegram: sending, refusals, retries, the queue, and keeping the token out of messages.
+    class FakeResponse:
+        def __init__(self, status: int, payload: Any) -> None:
+            self.status_code = status
+            self._payload = payload
+
+        def json(self) -> Any:
+            if self._payload is None:
+                raise ValueError("not json")
+            return self._payload
+
+    class FakeSession:
+        def __init__(self, replies: list[Any]) -> None:
+            self.headers: dict[str, str] = {}
+            self.replies = list(replies)
+            self.sent: list[tuple[str, Any]] = []
+
+        def post(self, url: str, json: Any = None, timeout: Any = None) -> Any:
+            self.sent.append((url, json))
+            reply = self.replies.pop(0)
+            if isinstance(reply, Exception):
+                raise reply
+            return reply
+
+    token = "123456:SECRET-token"
+    ok = lambda message_id: FakeResponse(200, {"ok": True, "result": {"message_id": message_id}})
+    real_sleep = time.sleep
+    time.sleep = lambda _seconds: None
+    try:
+        session = FakeSession([ok(11)])
+        client = TelegramClient(token=token, chat_id="@channel", session=session)
+        assert client.send_message("hello") == {"message_id": 11}
+        assert session.sent == [(f"https://api.telegram.org/bot{token}/sendMessage", {"chat_id": "@channel", "text": "hello"})]
+
+        # A refusal is reported without the token, and is not retried.
+        session = FakeSession([FakeResponse(403, {"ok": False, "description": f"Forbidden: bot{token} is not a member of the channel chat"})])
+        client = TelegramClient(token=token, chat_id="@channel", session=session)
+        try:
+            client.send_message("hello")
+            raise AssertionError("a refusal must raise")
+        except TelegramError as exc:
+            assert "403" in str(exc) and token not in str(exc), str(exc)
+        assert len(session.sent) == 1
+
+        # A server error, a rate limit and a network error are retried; the error names no address.
+        session = FakeSession([FakeResponse(502, None), FakeResponse(429, {"ok": False, "parameters": {"retry_after": 2}}), requests.ConnectionError(f"https://api.telegram.org/bot{token}/sendMessage"), ok(12)])
+        client = TelegramClient(token=token, chat_id="@channel", session=session)
+        assert client.send_message("hello") == {"message_id": 12}
+        session = FakeSession([requests.ConnectionError(f"bot{token}")] * 4)
+        client = TelegramClient(token=token, chat_id="@channel", session=session)
+        try:
+            client.send_message("hello")
+            raise AssertionError("an unreachable service must raise")
+        except TelegramError as exc:
+            assert token not in str(exc) and "ConnectionError" in str(exc), str(exc)
+
+        # The queue: a failure keeps the block waiting, a later run sends it once, in order.
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "state.json"
+            state = default_state()
+            state["posted"] = {"aa": {"height": 1}, "bb": {"height": 2}}
+            queue_telegram(state, block_hash="aa", height=1, text="first")
+            queue_telegram(state, block_hash="aa", height=1, text="first")
+            queue_telegram(state, block_hash="bb", height=2, text="second")
+            assert [row["hash"] for row in state["telegram_pending"]] == ["aa", "bb"]
+            session = FakeSession([ok(21), FakeResponse(400, {"ok": False, "description": "Bad Request: chat not found"})])
+            client = TelegramClient(token=token, chat_id="@channel", session=session)
+            assert flush_telegram(state, path, client, save=True) == 1
+            assert state["posted"]["aa"]["telegram_id"] == 21
+            assert [row["hash"] for row in load_state(path)["telegram_pending"]] == ["bb"]
+            session = FakeSession([ok(22)])
+            client = TelegramClient(token=token, chat_id="@channel", session=session)
+            assert flush_telegram(state, path, client, save=True) == 0
+            assert [body["text"] for _url, body in session.sent] == ["second"]
+            assert state["posted"]["bb"]["telegram_id"] == 22 and load_state(path)["telegram_pending"] == []
+            assert flush_telegram(state, path, None, save=True) == 0
+    finally:
+        time.sleep = real_sleep
+    print("  [ok] Telegram sending, retries, queue and token handling")
+
     if failures:
         print(f"{failures} self-test failure(s)")
         return 1
     print("All self-tests passed")
+    return 0
+
+
+def telegram_test() -> int:
+    """Send one message to the channel, to check the token and the bot's right to post."""
+    telegram = telegram_from_env()
+    if telegram is None:
+        log.error("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHANNEL first.")
+        return 2
+    try:
+        result = telegram.send_message(TELEGRAM_TEST_TEXT)
+    except TelegramError as exc:
+        log.error("Telegram test failed: %s", exc)
+        return 1
+    log.info("Telegram test message sent to %s (message id=%s)", telegram.chat_id, result.get("message_id"))
     return 0
 
 
@@ -1273,13 +1571,21 @@ def run_once(args: argparse.Namespace) -> int:
         seed_counts = parse_seed_counts(os.environ.get("SV2_SEED_COUNTS", DEFAULT_SEED_COUNTS))
         seed_height = int(os.environ.get("SV2_SEED_HEIGHT", str(DEFAULT_SEED_HEIGHT)))
 
+        telegram = telegram_from_env()
+        telegram_template = os.environ.get("TELEGRAM_TEMPLATE", template).replace("\\n", "\n")
+        telegram_link = env_flag("TELEGRAM_INCLUDE_LINK", True)
+        save = not args.no_save_state
+        # Blocks an earlier run could not get onto Telegram go out first.
+        if not dry_run:
+            flush_telegram(state, state_path, telegram, save=save)
+
         posted = process(
             mempool=mempool,
             state=state,
             state_path=state_path,
             x_client=x_client,
             dry_run=dry_run,
-            save=not args.no_save_state,
+            save=save,
             backfill_hours=args.backfill_hours,
             tz=tz,
             overnight_start=overnight_start,
@@ -1290,11 +1596,19 @@ def run_once(args: argparse.Namespace) -> int:
             include_link=include_link,
             seed_counts=seed_counts,
             seed_height=seed_height,
+            telegram=telegram,
+            telegram_template=telegram_template,
+            telegram_link=telegram_link,
         )
         if posted:
             log.info("Emitted %s tweet(s)", len(posted))
         else:
             log.info("No new SV2 blocks to post")
+        waiting = len(state.get("telegram_pending") or []) if telegram is not None and not dry_run else 0
+        if waiting:
+            # X is done and the state is saved; the run is marked failed so the trouble is noticed.
+            log.error("%s block(s) are still waiting to be posted to Telegram; the next run retries.", waiting)
+            return 1
         return 0
     finally:
         lock_fh.close()
@@ -1310,6 +1624,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
     if args.self_test:
         return self_test()
+    if args.telegram_test:
+        return telegram_test()
 
     if args.loop:
         log.info("Loop mode, interval=%ss, dry_run=%s", args.interval, args.dry_run)

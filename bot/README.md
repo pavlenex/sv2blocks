@@ -70,6 +70,10 @@ The block URL is omitted unless you pass `--block-link` or set `INCLUDE_BLOCK_LI
 
 `pools_review.csv` is a spreadsheet of the same data (name, slug, website, X handle, confidence, type, tagged, reason, source) so you can correct anything before going live. `POOL_HANDLES=Name:@handle` in `.env` (or a GitHub Actions env var, if you add one later) overrides a single entry without editing the JSON (an explicit override is always tagged).
 
+## Telegram
+
+New blocks are also posted to our [Telegram channel](https://t.me/+LZeFAU3jydQxZGY0), where they can be tracked. The bot posts there when the secret `TELEGRAM_BOT_TOKEN` and the variable `TELEGRAM_CHANNEL` are set.
+
 ## Dependencies
 
 `requirements.txt` pins every package, including indirect ones, to an exact version with file hashes, and the workflow installs with `--require-hashes`. Edit `requirements.in` and regenerate it with [pip-tools](https://pip-tools.readthedocs.io): `pip-compile --generate-hashes --strip-extras --allow-unsafe -o requirements.txt requirements.in`.
@@ -85,6 +89,7 @@ The block URL is omitted unless you pass `--block-link` or set `INCLUDE_BLOCK_LI
 | `sv2_bot.py --no-save-state` | Leave `state.json` untouched. |
 | `sv2_bot.py --self-test` | Local detection fixtures. |
 | `sv2_bot.py --block-link` | Append the mempool.space URL (off by default; URL posts cost more on the X API). |
+| `sv2_bot.py --telegram-test` | Send one test message to the Telegram channel and exit. |
 | `sv2_bot.py --no-block-link` | Force-omit the URL if `INCLUDE_BLOCK_LINK=true` is set. |
 | `sv2_bot.py --pools-file /path/pools.json` | Override the pool-handle map. |
 | `sv2_bot.py --state-file /path/state.json` | Override the state path. The workflow points this at the `bot-state` worktree. |

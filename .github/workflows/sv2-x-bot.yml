@@ -12,6 +12,8 @@
 #   1. Repository secrets: X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_TOKEN_SECRET.
 #   2. Run it once by hand: Actions → SV2 X bot → Run workflow.
 #   Optional repository variable SV2_BOT_MENTION_POOLS=true to @mention pools instead of naming them.
+#   Optional Telegram channel: secret TELEGRAM_BOT_TOKEN and variable TELEGRAM_CHANNEL (for example
+#   @sv2blocks). To check it, run this workflow by hand with "Send a test message" ticked.
 
 name: SV2 X bot
 
@@ -22,6 +24,11 @@ on:
   schedule:
     - cron: '8-59/10 * * * *'
   workflow_dispatch:
+    inputs:
+      telegram_test:
+        description: Send a test message to the Telegram channel
+        type: boolean
+        default: false
 
 concurrency:
   group: sv2-x-bot
@@ -75,6 +82,15 @@ jobs:
       - name: Install pinned dependencies
         run: python -m pip install --disable-pip-version-check --require-hashes --no-deps -r repo/bot/requirements.txt
 
+      - name: Send a Telegram test message
+        if: github.event_name == 'workflow_dispatch' && inputs.telegram_test
+        working-directory: repo/bot
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL: ${{ vars.TELEGRAM_CHANNEL }}
+          PYTHONUNBUFFERED: '1'
+        run: python sv2_bot.py --telegram-test
+
       # The keys exist only in this step's environment. Nothing here echoes the environment.
       - name: Run bot
         working-directory: repo/bot
@@ -86,6 +102,9 @@ jobs:
           MENTION_POOLS: ${{ vars.SV2_BOT_MENTION_POOLS || 'false' }}
           # Adds the block's mempool.space link. X bills a post with a link at a higher rate.
           INCLUDE_BLOCK_LINK: 'true'
+          # Optional: with both set, each block is also posted to the Telegram channel.
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL: ${{ vars.TELEGRAM_CHANNEL }}
           USER_AGENT: sv2blocks-x-bot (+https://github.com/${{ github.repository }})
           PYTHONUNBUFFERED: '1'
         run: python sv2_bot.py --once --state-file "$STATE_DIR/state.json"
