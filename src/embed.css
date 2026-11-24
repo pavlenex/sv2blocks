@@ -1,0 +1,215 @@
+/* Embeddable widgets: one tile that fills its iframe. Loaded after styles.css, which supplies the
+   tokens and the tile's own look; this file only adapts the page around it. */
+
+html:has(body.embed),
+body.embed {
+  height: 100%;
+}
+
+body.embed {
+  display: flex;
+  flex-direction: column;
+  /* The tile's sizes are relative to its container, which here is the iframe itself. */
+  container-type: inline-size;
+  overflow: hidden;
+}
+
+.widget {
+  flex: 1 1 auto;
+  min-height: 0;
+  /* The iframe is the card. Its snippet rounds the frame to the same radius, so the edge line below
+     follows the corners; there is no outer shadow because a frame would clip it. */
+  box-shadow:
+    inset 0 0 0 1px var(--glass-border),
+    inset 0 1px 0 var(--glass-highlight);
+}
+
+/* embed-init.js names the widget on <html> before the first paint; only that one is shown. */
+[data-widget='blocks'] #widget-leaderboard,
+[data-widget='leaderboard'] #widget-blocks {
+  display: none;
+}
+
+/* The chart takes whatever height the iframe has left. */
+.widget .chart-wrap {
+  flex: 1 1 auto;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+}
+
+.widget .chart {
+  min-height: 96px;
+}
+
+/* More pools than the frame has room for: the list scrolls instead of being cut off. */
+.widget .board-list {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.widget-foot {
+  margin-top: auto;
+  display: flex;
+  justify-content: flex-end;
+  min-height: 0;
+}
+
+.widget-foot:not(:has(.widget-link:not([hidden]))) {
+  display: none;
+}
+
+.widget-link {
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.widget-link:hover {
+  color: var(--accent-text);
+}
+
+.widget-status {
+  position: absolute;
+  inset: auto 0 12px;
+  text-align: center;
+}
+
+/* While its natural height is being measured (for pages that size the iframe to fit). */
+body.embed.is-measuring {
+  height: auto;
+}
+
+body.embed.is-measuring .widget {
+  flex: 0 0 auto;
+}
+
+body.embed.is-measuring .widget .chart {
+  min-height: clamp(156px, 22cqi, 212px);
+}
+
+/* The snippets page */
+
+.embeds {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.embeds-intro {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 62ch;
+}
+
+.embeds-intro h1 {
+  font-size: clamp(26px, 5cqi, 34px);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.embeds-intro p,
+.embed-note {
+  color: var(--fg-secondary);
+}
+
+.embed-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.embed-item {
+  gap: var(--space-4);
+}
+
+.embed-item h2 {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.embed-preview {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: var(--radius-lg);
+}
+
+.embed-code {
+  position: relative;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  background: var(--control);
+}
+
+.embed-code pre {
+  margin: 0;
+  padding: var(--space-4);
+  padding-right: 92px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.embed-copy {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  min-width: 72px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--control-active);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.embed-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.embed-table th,
+.embed-table td {
+  padding: 10px 12px 10px 0;
+  border-top: 1px solid var(--glass-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.embed-table th {
+  border-top: 0;
+  color: var(--fg-secondary);
+  font-weight: 500;
+}
+
+.embed-table code,
+.embed-note code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+.brand-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Very narrow frames (a sidebar, a phone column): keep only what fits. */
+@container (width < 330px) {
+  .widget .chart-ticks span:nth-child(2),
+  .widget .chart-ticks span:nth-child(3) {
+    display: none;
+  }
+
+  .widget .board-count {
+    display: none;
+  }
+}

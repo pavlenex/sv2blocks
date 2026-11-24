@@ -3,13 +3,13 @@ import '@fontsource-variable/jetbrains-mono/wght.css';
 import './styles.css';
 import { createChart } from './chart';
 import { loadChunk, loadSummary, parseSummary } from './data';
-import { fmtAgo, fmtBtc, fmtClock, fmtDay, fmtInt, fmtPercent, fmtUsd } from './format';
+import { fmtAgo, fmtBtc, fmtClock, fmtDay, fmtInt, fmtPercent } from './format';
 import { createGrid, type GridSource } from './grid';
+import { RANGES, chartInput, describeRange, firstAtOrAbove } from './range';
+import { boardItems, boardRows } from './board';
 import type { BlockChunk, BlockInfo, RangeKey, Summary, Sv2Block, Theme, Unit } from './types';
 
 const config = __SV2_CONFIG__;
-const RANGES: RangeKey[] = ['24H', '1W', '1M', 'ALL'];
-const WINDOW_SECONDS: Record<Exclude<RangeKey, 'ALL'>, number> = { '24H': 86400, '1W': 7 * 86400, '1M': 30 * 86400 };
 const REFRESH_MS = 5 * 60 * 1000;
 const AGO_REFRESH_MS = 60 * 1000;
 const PREFETCH_CHUNKS = 2;
@@ -95,27 +95,7 @@ const grid = createGrid(
   },
 );
 
-/** Index of the first SV2 block at or above a height (the list is sorted by height). */
-function firstAtOrAbove(blocks: Sv2Block[], height: number): number {
-  let low = 0;
-  let high = blocks.length;
-  while (low < high) {
-    const middle = (low + high) >> 1;
-    if ((blocks[middle]?.h ?? Infinity) < height) low = middle + 1;
-    else high = middle;
-  }
-  return low;
-}
-
-function rangeWords(data: Summary): string {
-  const words: Record<RangeKey, string> = {
-    '24H': 'past 24 hours',
-    '1W': 'past week',
-    '1M': 'past 30 days',
-    ALL: `since block ${fmtInt(data.start)}`,
-  };
-  return words[state.range];
-}
+const rangeWords = (data: Summary) => describeRange(state.range, data.start);
 
 function renderControls(data: Summary | null) {
   for (const button of $('range').querySelectorAll('button')) {
@@ -130,45 +110,9 @@ function renderControls(data: Summary | null) {
 }
 
 function renderLeaderboard(data: Summary, inRange: Sv2Block[]) {
-  const pools = new Map<string, { name: string; blocks: number; sats: number }>();
-  for (const block of inRange) {
-    const entry = pools.get(block.slug) ?? { name: block.pool, blocks: 0, sats: 0 };
-    entry.name = block.pool;
-    entry.blocks += 1;
-    entry.sats += block.reward;
-    pools.set(block.slug, entry);
-  }
-  const rows = [...pools.values()]
-    .sort((a, b) => b.sats - a.sats || b.blocks - a.blocks || a.name.localeCompare(b.name))
-    .slice(0, config.leaderboardSize);
+  const rows = boardRows(inRange, config.leaderboardSize);
   const usd = state.unit === 'USD' && data.price ? data.price.usd : null;
-
-  $('board-list').replaceChildren(
-    ...rows.map((row, index) => {
-      const item = document.createElement('li');
-      item.className = index === 0 ? 'board-row lead' : 'board-row';
-      const name = document.createElement('span');
-      name.className = 'board-name';
-      name.textContent = row.name;
-      name.title = row.name;
-      const count = document.createElement('span');
-      count.className = 'board-count';
-      count.textContent = `${fmtInt(row.blocks)} ${row.blocks === 1 ? 'block' : 'blocks'}`;
-      const revenue = document.createElement('span');
-      revenue.className = 'board-revenue';
-      const amount = document.createElement('span');
-      amount.textContent = usd === null ? fmtBtc(row.sats, 2) : fmtUsd((row.sats / 1e8) * usd);
-      revenue.append(amount);
-      if (usd === null) {
-        const unit = document.createElement('span');
-        unit.className = 'unit';
-        unit.textContent = 'BTC';
-        revenue.append(unit);
-      }
-      item.append(name, count, revenue);
-      return item;
-    }),
-  );
+  $('board-list').replaceChildren(...boardItems(rows, usd));
   $('board-empty').hidden = rows.length > 0;
   $('board-list').hidden = rows.length === 0;
 }
@@ -325,7 +269,6 @@ function render() {
   const inRange = data.sv2.slice(firstAtOrAbove(data.sv2, rangeStart));
   const total = data.sv2.length;
   const delta = inRange.length;
-  const before = total - delta;
   const blocksInRange = Math.max(0, data.tip - rangeStart + 1);
   const words = rangeWords(data);
   // Entrance animations play on first show, on a range change and when a new Stratum V2 block lands,
@@ -351,17 +294,9 @@ function render() {
   $('delta').classList.toggle('flat', delta === 0);
   $('range-text').textContent = words;
 
-  const times = inRange.map((block) => block.t).sort((a, b) => a - b);
-  const tEnd = data.updatedAt;
-  const tStart = state.range === 'ALL' ? Math.min(times[0] ?? tEnd - 86400, tEnd - 1) : tEnd - WINDOW_SECONDS[state.range];
-  const shortLabel = state.range === '24H' ? fmtClock : fmtDay;
-  const longLabel = (time: number) => (state.range === '24H' ? fmtClock(time) : state.range === '1W' ? `${fmtDay(time)} ${fmtClock(time)}` : fmtDay(time));
-  const span = tEnd - tStart;
+  const { model, ticks } = chartInput(data, state.range, inRange);
   $('chart-wrap').hidden = false;
-  chart.render(
-    { times, before, tStart, tEnd, label: longLabel },
-    [shortLabel(tStart), shortLabel(tStart + span / 3), shortLabel(tStart + (2 * span) / 3), shortLabel(tEnd)],
-  );
+  chart.render(model, ticks);
 
   const boardRange = $('board-range');
   boardRange.textContent = state.range === 'ALL' ? '' : words;

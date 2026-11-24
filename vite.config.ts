@@ -26,18 +26,22 @@ export default defineConfig(async ({ command }) => {
 
   const html: Plugin = {
     name: 'sv2blocks-html',
-    async transformIndexHtml(source) {
+    async transformIndexHtml(source, context) {
+      const name = context.path.split('/').pop() || 'index.html';
+      const title = name === 'embeds.html' ? `Embed widgets · ${config.site.title}` : config.site.title;
       const page = source
         .replace('<html lang="en">', `<html lang="en" data-default-theme="${escapeHtml(config.site.defaultTheme)}">`)
-        .replace(/<title>.*?<\/title>/, `<title>${escapeHtml(config.site.title)}</title>`)
+        .replace(/<title>.*?<\/title>/, `<title>${escapeHtml(title)}</title>`)
         .replace('content="__DESCRIPTION__"', `content="${escapeHtml(config.site.description)}"`);
       const tags: HtmlTagDescriptor[] = [];
       // The current summary travels inside the page, so the first paint does not wait for a second request.
       // It is inert data (not a script the browser runs); the page still re-checks summary.json afterwards.
-      const summary = embeddableJson(await readFile('public/data/summary.json', 'utf8').catch(() => undefined));
+      const summary = name === 'embeds.html' ? null : embeddableJson(await readFile('public/data/summary.json', 'utf8').catch(() => undefined));
       if (summary) tags.push({ tag: 'script', attrs: { type: 'application/json', id: 'summary-data' }, children: summary, injectTo: 'body' });
       // The dev server injects styles inline, so the policy is only added to real builds.
-      if (command === 'build') tags.push({ tag: 'meta', attrs: { 'http-equiv': 'Content-Security-Policy', content: CSP }, injectTo: 'head-prepend' });
+      // Only the snippets page shows frames, and only this site's own widgets.
+      const policy = name === 'embeds.html' ? `${CSP}; frame-src 'self'` : CSP;
+      if (command === 'build') tags.push({ tag: 'meta', attrs: { 'http-equiv': 'Content-Security-Policy', content: policy }, injectTo: 'head-prepend' });
       return { html: page, tags };
     },
   };
@@ -46,7 +50,13 @@ export default defineConfig(async ({ command }) => {
     base: './', // relative URLs, so the build works at a domain root and under /<repo>/ on GitHub Pages
     define: { __SV2_CONFIG__: JSON.stringify(clientConfig(config)) },
     plugins: [html],
-    build: { target: 'es2022', sourcemap: false, assetsInlineLimit: 0 },
+    build: {
+      target: 'es2022',
+      sourcemap: false,
+      assetsInlineLimit: 0,
+      // index.html is the dashboard, embed.html a single widget for other sites to frame, embeds.html the snippets page.
+      rollupOptions: { input: ['index.html', 'embed.html', 'embeds.html'] },
+    },
     server: { host: '127.0.0.1' },
     preview: { host: '127.0.0.1' },
   };

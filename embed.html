@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="robots" content="noindex" />
+    <meta name="description" content="__DESCRIPTION__" />
+    <title>sv2blocks</title>
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <script src="./embed-init.js"></script>
+  </head>
+  <body class="embed" data-loading>
+    <!-- One widget per page, chosen with ?widget=blocks or ?widget=leaderboard. See embeds.html. -->
+    <main class="card glass hero widget" id="widget-blocks" aria-labelledby="hero-title">
+      <div class="hero-head">
+        <h1 class="hero-label" id="hero-title">Stratum V2 blocks</h1>
+        <p class="hero-number" id="total">–</p>
+        <p class="hero-change" id="hero-change" hidden>
+          <span class="chip" id="delta"></span>
+          <span id="range-text"></span>
+        </p>
+      </div>
+      <div class="skeleton skeleton-chart" aria-hidden="true">
+        <svg viewBox="0 0 1000 300" preserveAspectRatio="none">
+          <path class="skeleton-guides" d="M0 14H1000M0 153H1000M0 292H1000" vector-effect="non-scaling-stroke" />
+          <path class="skeleton-curve" d="M0 292C250 286 430 268 570 212S830 66 1000 14" vector-effect="non-scaling-stroke" />
+        </svg>
+        <div class="skeleton-ticks"><span></span><span></span><span></span><span></span></div>
+      </div>
+      <div class="chart-wrap" id="chart-wrap" hidden>
+        <div class="chart-scale" id="chart-scale" aria-hidden="true"></div>
+        <div class="chart" id="chart">
+          <svg class="chart-layer fade" viewBox="0 0 1000 300" preserveAspectRatio="none" aria-hidden="true">
+            <path class="chart-area" id="chart-area" d="" />
+          </svg>
+          <svg class="chart-layer" id="chart-svg" viewBox="0 0 1000 300" preserveAspectRatio="none" role="img" aria-label="Cumulative Stratum V2 blocks">
+            <path class="chart-guides" id="chart-guides" d="" vector-effect="non-scaling-stroke" />
+            <path class="chart-line" id="chart-line" d="" vector-effect="non-scaling-stroke" />
+          </svg>
+          <div class="chart-dot" id="chart-dot" aria-hidden="true"></div>
+          <div class="chart-cursor" id="chart-cursor" aria-hidden="true" hidden></div>
+          <div class="chart-cursor-dot" id="chart-cursor-dot" aria-hidden="true" hidden></div>
+          <div class="chart-readout" id="chart-readout" aria-hidden="true" hidden></div>
+        </div>
+        <div class="chart-ticks" id="chart-ticks" aria-hidden="true"></div>
+      </div>
+      <p class="widget-foot"><a class="widget-link" target="_blank" rel="noopener" hidden></a></p>
+    </main>
+
+    <main class="card glass board widget" id="widget-leaderboard" aria-labelledby="board-title">
+      <div class="card-head">
+        <div>
+          <h1 class="card-title" id="board-title">Leaderboard</h1>
+          <p class="card-caption" id="board-range" hidden></p>
+        </div>
+        <div class="seg seg-unit" id="unit" role="group" aria-label="Revenue currency">
+          <button type="button" data-unit="BTC" aria-pressed="true">BTC</button>
+          <button type="button" data-unit="USD" aria-pressed="false">USD</button>
+        </div>
+      </div>
+      <div class="skeleton skeleton-rows" aria-hidden="true">
+        <div><span></span><span></span><span></span></div>
+        <div><span></span><span></span><span></span></div>
+        <div><span></span><span></span><span></span></div>
+      </div>
+      <ol class="board-list" id="board-list"></ol>
+      <p class="empty" id="board-empty" hidden>No Stratum V2 blocks in this range</p>
+      <p class="widget-foot"><a class="widget-link" target="_blank" rel="noopener" hidden></a></p>
+    </main>
+
+    <p class="status widget-status" id="status" role="status" hidden></p>
+    <noscript>This widget needs JavaScript.</noscript>
+    <script type="module" src="/src/embed.ts"></script>
+  </body>
+</html>
