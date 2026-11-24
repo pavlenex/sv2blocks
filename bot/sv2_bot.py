@@ -71,6 +71,9 @@ MAX_PENDING_POSTS = 50
 # A rate limit is waited out in full. If the service asks for longer than this, the message is
 # left queued for the next run instead of being retried too early.
 MAX_RATE_LIMIT_WAIT = 60.0
+# A longer rate limit is remembered in state.json, so no run tries again before it has passed.
+# This caps a nonsensical value from the service.
+MAX_RATE_LIMIT_HOLD = 24 * 3600.0
 CONNECTED_TEXT = "sv2blocks is connected. New Stratum V2 blocks will be posted here."
 # A Discord webhook address is only ever one of these hosts followed by this path.
 DISCORD_WEBHOOK_HOSTS = ("discord.com", "discordapp.com", "canary.discord.com", "ptb.discord.com")
@@ -649,6 +652,9 @@ class XClient:
 class ChannelError(RuntimeError):
     """A message Telegram or Discord did not accept. Its text never contains a token or address."""
 
+    # Seconds the service asked to wait before the next attempt, when it is rate limiting.
+    retry_after: Optional[float] = None
+
 
 class TelegramError(ChannelError):
     pass
@@ -672,7 +678,9 @@ def retry_wait(label: str, error: type, status: int, asked: Any, backoff: float)
     except (TypeError, ValueError):
         seconds = backoff
     if seconds > MAX_RATE_LIMIT_WAIT:
-        raise error(f"{label} is rate limiting and asked to wait {seconds:.0f}s; left for the next run")
+        failure = error(f"{label} is rate limiting and asked to wait {seconds:.0f}s; left for a later run")
+        failure.retry_after = seconds
+        raise failure
     # A little longer than asked, so the retry does not land on the boundary.
     return max(1.0, seconds + 0.5)
 
@@ -687,6 +695,7 @@ class TelegramClient:
 
     label = "Telegram"
     pending_key = "telegram_pending"
+    retry_key = "telegram_retry_at"
     id_field = "telegram_id"
     max_len = MAX_TELEGRAM_LEN
 
@@ -793,6 +802,7 @@ class DiscordClient:
 
     label = "Discord"
     pending_key = "discord_pending"
+    retry_key = "discord_retry_at"
     id_field = "discord_id"
     max_len = MAX_DISCORD_LEN
 
@@ -911,6 +921,8 @@ class Channel:
     include_link: bool
     # Applied to the pool name and coinbase tag, which other people choose.
     escape: Callable[[str], str] = str
+    # Set once a send has failed in this run, so the same run does not try this channel again.
+    failed: bool = False
 
 
 def channels_from_env(template: str) -> list[Channel]:
@@ -945,19 +957,42 @@ def queue_post(state: dict[str, Any], channel: Channel, *, block_hash: str, heig
 def flush_channel(state: dict[str, Any], state_path: Path, channel: Channel, *, save: bool) -> int:
     """Send this channel's queued blocks, oldest first. Returns how many are still waiting.
 
-    A failure stops at that block and leaves it queued for the next run. It never raises, so
-    trouble on Telegram or Discord cannot hold up or repeat a post anywhere else.
+    A failure stops at that block and leaves it queued. It never raises, so trouble on Telegram
+    or Discord cannot hold up or repeat a post anywhere else. After a failure the channel is not
+    tried again in this run, and when the service named a rate limit, that time is kept in
+    state.json so later runs wait for it too.
     """
     client = channel.client
     key, label = client.pending_key, client.label
     pending = [row for row in (state.get(key) or []) if isinstance(row, dict) and row.get("text")]
     state[key] = pending
+    if not pending or channel.failed:
+        return len(pending)
+
+    retry_at = state.get(client.retry_key)
+    if isinstance(retry_at, (int, float)) and not isinstance(retry_at, bool):
+        remaining = retry_at - time.time()
+        if 0 < remaining <= MAX_RATE_LIMIT_HOLD:
+            log.info("%s is rate limited for another %.0fs; %s block(s) stay queued", label, remaining, len(pending))
+            channel.failed = True
+            return len(pending)
+    if client.retry_key in state:
+        # The limit has passed (or the stored value made no sense).
+        del state[client.retry_key]
+        if save:
+            save_state(state_path, state)
+
     while pending:
         row = pending[0]
         try:
             message_id = client.post(str(row["text"]))
         except ChannelError as exc:
             log.error("%s: block %s was not posted and stays queued: %s", label, row.get("height"), exc)
+            channel.failed = True
+            if exc.retry_after:
+                state[client.retry_key] = int(time.time() + min(float(exc.retry_after), MAX_RATE_LIMIT_HOLD)) + 1
+                if save:
+                    save_state(state_path, state)
             break
         log.info("Posted %s message id=%s for block %s", label, message_id, row.get("height"))
         entry = (state.get("posted") or {}).get(row.get("hash"))
@@ -1755,7 +1790,7 @@ def self_test() -> int:
             retry_wait("Service", client_error, 429, asked, 1.0)
             raise AssertionError("a long rate limit must end the attempt")
         except ChannelError as exc:
-            assert isinstance(exc, client_error) and "next run" in str(exc)
+            assert isinstance(exc, client_error) and exc.retry_after == asked and "later run" in str(exc)
     slept: list[float] = []
     time.sleep = slept.append
     try:
@@ -1773,7 +1808,58 @@ def self_test() -> int:
         assert DiscordClient(webhook_url=hook, session=FakeSession([FakeResponse(204, None)])).post("hello") is None
     finally:
         time.sleep = real_sleep
-    print("  [ok] rate limits are honoured in full or left for the next run")
+    # A long rate limit: one attempt, then nothing more in this run or in later runs until the
+    # time the service named has passed.
+    real_time = time.time
+    clock = [1_800_000_000.0]
+    time.time = lambda: clock[0]
+    time.sleep = lambda _seconds: None
+    try:
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "state.json"
+            state = default_state()
+            state["posted"] = {"aa": {"height": 1}, "bb": {"height": 2}}
+            limited = FakeResponse(429, {"message": "You are being rate limited.", "retry_after": 600})
+            session = FakeSession([limited, FakeResponse(200, {"id": "should not be reached"})])
+            channel = Channel(DiscordClient(webhook_url=hook, session=session), DEFAULT_TEMPLATE, True, discord_escape)
+            queue_post(state, channel, block_hash="aa", height=1, text="first")
+            assert flush_channel(state, path, channel, save=True) == 1
+            queue_post(state, channel, block_hash="bb", height=2, text="second")
+            save_state(path, state)  # as process() does after queueing a block
+            assert flush_channel(state, path, channel, save=True) == 2
+            assert len(session.sent) == 1, "the same run must not try a rate-limited channel twice"
+            assert load_state(path)["discord_retry_at"] == 1_800_000_601
+
+            # A later run, before the time has passed: nothing is sent.
+            clock[0] += 300
+            state = load_state(path)
+            session = FakeSession([FakeResponse(200, {"id": "too early"})])
+            channel = Channel(DiscordClient(webhook_url=hook, session=session), DEFAULT_TEMPLATE, True, discord_escape)
+            assert flush_channel(state, path, channel, save=True) == 2 and session.sent == []
+
+            # After it has passed: both go out, in order, and the stored time is cleared.
+            clock[0] += 302
+            state = load_state(path)
+            session = FakeSession([FakeResponse(200, {"id": "71"}), FakeResponse(200, {"id": "72"})])
+            channel = Channel(DiscordClient(webhook_url=hook, session=session), DEFAULT_TEMPLATE, True, discord_escape)
+            assert flush_channel(state, path, channel, save=True) == 0
+            assert [body["content"] for _url, body in session.sent] == ["first", "second"]
+            saved = load_state(path)
+            assert "discord_retry_at" not in saved and saved["discord_pending"] == []
+
+            # Any other failure also ends this run's attempts for the channel, without a stored time.
+            state = default_state()
+            state["posted"] = {"aa": {"height": 1}}
+            session = FakeSession([FakeResponse(403, {"ok": False, "description": "Forbidden"}), ok(1)])
+            channel = Channel(TelegramClient(token=token, chat_id="@channel", session=session), DEFAULT_TEMPLATE, True)
+            queue_post(state, channel, block_hash="aa", height=1, text="first")
+            assert flush_channel(state, path, channel, save=True) == 1
+            assert flush_channel(state, path, channel, save=True) == 1
+            assert len(session.sent) == 1 and "telegram_retry_at" not in state
+    finally:
+        time.time = real_time
+        time.sleep = real_sleep
+    print("  [ok] rate limits are honoured in full, or remembered until they have passed")
 
     # --verbose must not let the HTTP or OAuth libraries log addresses or signing details.
     levels = {name: logging.getLogger(name).level for name in ("urllib3", "requests", "requests_oauthlib", "oauthlib")}
