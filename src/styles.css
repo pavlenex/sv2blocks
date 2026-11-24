@@ -286,10 +286,10 @@ button {
   display: grid;
   align-items: stretch;
   gap: var(--space-4);
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(300px, 1.15fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(310px, 1.18fr);
   grid-template-areas:
-    'hero hero board'
-    'latest share board'
+    'hero hero rail'
+    'latest share rail'
     'blocks blocks blocks';
 }
 
@@ -305,8 +305,38 @@ button {
   grid-area: share;
 }
 
-.board {
-  grid-area: board;
+.dashboard-rail {
+  grid-area: rail;
+  min-width: 0;
+}
+
+.dashboard-rail-inner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+@container (width > 760px) {
+  .dashboard-rail {
+    position: relative;
+  }
+
+  .dashboard-rail-inner {
+    position: absolute;
+    inset: 0;
+  }
+
+  .dashboard-rail-inner .board {
+    flex: 0 1 auto;
+    min-height: 0;
+    max-height: 58%;
+  }
+
+  .dashboard-rail-inner .recent-card {
+    flex: 1 1 0;
+    min-height: 0;
+  }
 }
 
 .blocks {
@@ -531,9 +561,10 @@ button {
   white-space: nowrap;
 }
 
-/* Leaderboard */
+/* Leaderboard & Recent SV2 blocks */
 
-.board {
+.board,
+.recent-card {
   gap: var(--space-3);
 }
 
@@ -547,7 +578,6 @@ button {
 .bento .board-list {
   flex: 1 1 auto;
   min-height: 0;
-  max-height: 430px;
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--glass-border-strong) transparent;
@@ -558,7 +588,7 @@ button {
   align-items: center;
   gap: var(--space-3);
   min-height: 36px;
-  padding: 6px 0;
+  padding: 7px 0;
   border-top: 1px solid var(--glass-border);
   font-variant-numeric: tabular-nums;
 }
@@ -578,7 +608,7 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14.5px;
+  font-size: 14px;
   font-weight: 500;
 }
 
@@ -610,7 +640,7 @@ button {
   justify-content: flex-end;
   gap: 5px;
   min-width: 82px;
-  font-size: 15.5px;
+  font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.015em;
   line-height: 1.2;
@@ -625,7 +655,7 @@ button {
 }
 
 .empty {
-  font-size: 14px;
+  font-size: 13.5px;
   color: var(--fg-muted);
 }
 
@@ -634,20 +664,13 @@ button {
 .blocks-heading {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
+  gap: var(--space-3);
 }
 
 .blocks-content {
   display: grid;
   align-items: start;
-  gap: var(--space-6);
-}
-
-@container (width > 760px) {
-  .blocks-content:has(.recent-blocks:not([hidden])) {
-    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-  }
+  gap: var(--space-4);
 }
 
 .block-visual {
@@ -760,16 +783,19 @@ button {
   color: var(--fg-muted);
 }
 
-.recent-blocks h3 {
-  margin-bottom: var(--space-2);
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--fg-secondary);
+.recent-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0 8px;
+  margin: 0 -8px;
+  list-style: none;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--glass-border-strong) transparent;
 }
 
-.recent-list {
-  padding: 0;
-  list-style: none;
+.recent-list > li + li {
+  border-top: 1px solid var(--glass-border);
 }
 
 .recent-row {
@@ -777,14 +803,13 @@ button {
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-3);
-  min-height: 40px;
-  padding: 6px 10px;
-  margin: 0 -10px;
-  border-top: 1px solid var(--glass-border);
+  min-height: 36px;
+  padding: 6px 8px;
+  margin: 0 -8px;
   border-radius: 10px;
   color: var(--fg-secondary);
   text-decoration: none;
-  font-size: 13px;
+  font-size: 14px;
   transition: background-color 120ms ease;
 }
 
@@ -794,7 +819,7 @@ button {
 
 .recent-height {
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--accent-text);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
@@ -804,6 +829,7 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-weight: 500;
   color: var(--fg);
 }
 
@@ -1148,15 +1174,7 @@ a.tile-number[href]:hover::after {
 }
 
 [data-loading] .skeleton-blocks {
-  display: grid;
-  align-items: start;
-  gap: var(--space-6);
-}
-
-@container (width > 760px) {
-  [data-loading] .skeleton-blocks {
-    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-  }
+  display: block;
 }
 
 .skeleton-cells {
@@ -1172,7 +1190,10 @@ a.tile-number[href]:hover::after {
 }
 
 .skeleton-recent > div {
-  min-height: 40px;
+  min-height: 36px;
+}
+
+.skeleton-recent > div + div {
   border-top: 1px solid var(--glass-border);
 }
 
@@ -1219,8 +1240,12 @@ a.tile-number[href]:hover::after {
   animation-delay: 0.12s;
 }
 
+.recent-card {
+  animation-delay: 0.16s;
+}
+
 .blocks {
-  animation-delay: 0.18s;
+  animation-delay: 0.2s;
 }
 
 @keyframes card-in {
@@ -1329,13 +1354,17 @@ a.tile-number[href]:hover::after {
     grid-template-areas:
       'hero hero'
       'latest share'
-      'board board'
+      'rail rail'
       'blocks blocks';
   }
 
   .bento .board-list {
     max-height: none;
     overflow-y: visible;
+  }
+
+  .recent-list {
+    max-height: 300px;
   }
 
   .tile {

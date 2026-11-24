@@ -14,7 +14,7 @@ const config = __SV2_CONFIG__;
 const REFRESH_MS = 5 * 60 * 1000;
 const AGO_REFRESH_MS = 60 * 1000;
 const PREFETCH_CHUNKS = 2;
-const RECENT_BLOCK_LIMIT = 5;
+const RECENT_BLOCK_LIMIT = 20;
 const blockDate = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 
 function $<T extends Element = HTMLElement>(id: string): T {
@@ -119,7 +119,9 @@ function renderLeaderboard(data: Summary, inRange: Sv2Block[]) {
 }
 
 function renderRecentBlocks(inRange: Sv2Block[]) {
-  $('recent-blocks').hidden = inRange.length === 0;
+  const empty = inRange.length === 0;
+  $('recent-empty').hidden = !empty;
+  $('recent-list').hidden = empty;
   $('recent-list').replaceChildren(...inRange.slice(-RECENT_BLOCK_LIMIT).reverse().map((block) => {
     const item = document.createElement('li');
     const link = document.createElement('a');

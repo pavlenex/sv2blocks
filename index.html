@@ -111,27 +111,43 @@
             <p class="tile-number" id="share">–</p>
           </section>
 
-          <section class="card glass board" aria-labelledby="board-title">
-            <div class="card-head">
-              <div>
-                <h2 class="card-title" id="board-title">Leaderboard</h2>
-                <p class="card-caption" id="board-range" hidden></p>
-              </div>
-              <div class="seg seg-unit" id="unit" role="group" aria-label="Revenue currency">
-                <button type="button" data-unit="BTC" aria-pressed="true">BTC</button>
-                <button type="button" data-unit="USD" aria-pressed="false">USD</button>
-              </div>
+          <div class="dashboard-rail">
+            <div class="dashboard-rail-inner">
+              <section class="card glass board" aria-labelledby="board-title">
+                <div class="card-head">
+                  <div>
+                    <h2 class="card-title" id="board-title">Leaderboard</h2>
+                    <p class="card-caption" id="board-range" hidden></p>
+                  </div>
+                  <div class="seg seg-unit" id="unit" role="group" aria-label="Revenue currency">
+                    <button type="button" data-unit="BTC" aria-pressed="true">BTC</button>
+                    <button type="button" data-unit="USD" aria-pressed="false">USD</button>
+                  </div>
+                </div>
+                <div class="skeleton skeleton-rows" aria-hidden="true">
+                  <div><span></span><span></span><span></span></div>
+                  <div><span></span><span></span><span></span></div>
+                  <div><span></span><span></span><span></span></div>
+                </div>
+                <ol class="board-list" id="board-list"></ol>
+                <p class="empty" id="board-empty" hidden>No Stratum V2 blocks in this range</p>
+              </section>
+
+              <section class="card glass recent-card" id="recent-blocks" aria-labelledby="recent-title">
+                <div class="card-head">
+                  <h2 class="card-title" id="recent-title">Recent SV2 blocks</h2>
+                </div>
+                <div class="skeleton skeleton-rows skeleton-recent" aria-hidden="true">
+                  <div><span></span><span></span><span></span></div>
+                  <div><span></span><span></span><span></span></div>
+                  <div><span></span><span></span><span></span></div>
+                  <div><span></span><span></span><span></span></div>
+                </div>
+                <ol class="recent-list" id="recent-list" role="list"></ol>
+                <p class="empty" id="recent-empty" hidden>No Stratum V2 blocks in this range</p>
+              </section>
             </div>
-            <div class="skeleton skeleton-rows" aria-hidden="true">
-              <div><span></span><span></span><span></span></div>
-              <div><span></span><span></span><span></span></div>
-              <div><span></span><span></span><span></span></div>
-              <div><span></span><span></span><span></span></div>
-              <div><span></span><span></span><span></span></div>
-            </div>
-            <ol class="board-list" id="board-list"></ol>
-            <p class="empty" id="board-empty" hidden>No Stratum V2 blocks in this range</p>
-          </section>
+          </div>
 
           <section class="card glass blocks" aria-labelledby="blocks-title">
             <div class="blocks-heading">
@@ -141,12 +157,6 @@
             <div class="blocks-content">
               <div class="skeleton skeleton-blocks" aria-hidden="true">
                 <div class="skeleton-cells"></div>
-                <div class="skeleton-rows skeleton-recent">
-                  <div><span></span><span></span><span></span></div>
-                  <div><span></span><span></span><span></span></div>
-                  <div><span></span><span></span><span></span></div>
-                  <div><span></span><span></span><span></span></div>
-                </div>
               </div>
               <div class="block-visual" id="block-visual" hidden>
                 <div class="grid" id="grid" tabindex="0" role="group" aria-label="Block grid. Use the arrow keys to move between blocks and Enter to open one.">
@@ -164,10 +174,6 @@
                 <p class="grid-legend"><span class="grid-key sv2">Stratum V2</span><span class="grid-key">Other blocks</span></p>
               </div>
               <p class="empty" id="grid-status" role="status" hidden></p>
-              <section class="recent-blocks" id="recent-blocks" aria-labelledby="recent-title" hidden>
-                <h3 id="recent-title">Recent SV2 blocks</h3>
-                <ol class="recent-list" id="recent-list" role="list"></ol>
-              </section>
             </div>
           </section>
         </main>
