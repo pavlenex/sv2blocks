@@ -84,6 +84,8 @@ jobs:
           X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
           X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
           MENTION_POOLS: ${{ vars.SV2_BOT_MENTION_POOLS || 'false' }}
+          # Adds the block's mempool.space link. X bills a post with a link at a higher rate.
+          INCLUDE_BLOCK_LINK: 'true'
           USER_AGENT: sv2blocks-x-bot (+https://github.com/${{ github.repository }})
           PYTHONUNBUFFERED: '1'
         run: python sv2_bot.py --once --state-file "$STATE_DIR/state.json"
