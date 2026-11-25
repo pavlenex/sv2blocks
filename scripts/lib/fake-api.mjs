@@ -7,9 +7,9 @@ import { subsidy } from './store.mjs';
 const POOLS = ['Pool A', 'Pool B', 'Pool C', 'Pool D', 'Pool E', 'Pool F', 'Pool G', 'Pool H'];
 const SV2_POOLS = ['MARA Pool', 'DMND', 'Pool B', 'Pool C', 'Pool D'];
 const SV2_SHARES = [0.46, 0.68, 0.84, 0.94, 1];
-const SV2_TAGS = ['Sv2/MARA//', '/Stratum V2/', '/sv2/', 'Sv2/DMND/GM/', 'Sv2/PoolB/HomeMiner/'];
+const SV2_TAGS = ['Sv2/MARA🇺🇸🇺🇸//', '/Stratum V2/', '/sv2/', 'Sv2/DMND/GM/', 'Sv2/PoolB/HomeMiner/'];
 
-const toHex = (text) => Buffer.from(text, 'latin1').toString('hex');
+const toHex = (text) => Buffer.from(text, 'utf8').toString('hex');
 const unit = (seed) => createHash('sha256').update(seed).digest().readUInt32BE(0) / 2 ** 32;
 const slugOf = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 

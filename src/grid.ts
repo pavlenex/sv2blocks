@@ -94,13 +94,22 @@ export function createGrid(elements: GridElements, options: GridOptions) {
     markers = [];
 
     const styles = getComputedStyle(document.documentElement);
-    const dimColor = styles.getPropertyValue('--block-dim').trim() || 'rgba(128,128,128,0.2)';
+    const dimColor = styles.getPropertyValue('--block-dim').trim() || 'rgba(255,255,255,0.3)';
+    const gapColor = styles.getPropertyValue('--block-gap').trim() || '#050709';
     const accent = styles.getPropertyValue('--accent').trim() || '#00d4ff';
     const jdpColor = styles.getPropertyValue('--jdp').trim() || '#f59e0b';
     const background = styles.getPropertyValue('--bg').trim() || '#000000';
     const { size, cols, offsetX } = layout;
     const rounded = size >= ROUNDED_FROM && typeof context.roundRect === 'function';
-    const gap = size >= ROUNDED_FROM ? Math.round(size * 0.14) : size >= 1.5 ? 1 : 0;
+    const gap = rounded
+      ? Math.max(Math.round(2 * ratio), Math.round(size * 0.2))
+      : size >= 3.5 * ratio
+        ? Math.max(1, Math.round(1.25 * ratio))
+        : size >= 2.2 * ratio
+          ? Math.max(1, Math.round(ratio))
+          : size >= 1.5
+            ? 1
+            : 0;
     const markSmallCells = size < 2 * MARKER_RADIUS * ratio;
 
     const trace = (index: number, inset: number) => {
@@ -110,8 +119,8 @@ export function createGrid(elements: GridElements, options: GridOptions) {
       const right = offsetX + Math.round((col + 1) * size);
       const bottom = height - Math.round(row * size);
       const top = height - Math.round((row + 1) * size);
-      const x = rounded ? left + inset / 2 : left;
-      const y = rounded ? top + inset / 2 : top;
+      const x = rounded ? left + inset / 2 : left + Math.floor(inset / 2);
+      const y = rounded ? top + inset / 2 : top + Math.floor(inset / 2);
       const w = Math.max(1, right - left - inset);
       const h = Math.max(1, bottom - top - inset);
       if (rounded) context.roundRect(x, y, w, h, Math.min(w, h) * 0.22);
@@ -121,6 +130,14 @@ export function createGrid(elements: GridElements, options: GridOptions) {
     context.clearRect(0, 0, elements.canvas.width, elements.canvas.height);
     context.save();
     context.translate(padding, padding);
+
+    // Crisp backing behind the cells so the grid lines separating each block stay high-contrast.
+    context.fillStyle = gapColor;
+    context.beginPath();
+    if (typeof context.roundRect === 'function') context.roundRect(0, 0, width, height, 4 * ratio);
+    else context.rect(0, 0, width, height);
+    context.fill();
+
     context.beginPath();
     for (let index = 0; index < source.count; index++) if (!source.isSv2(index)) trace(index, gap);
     context.fillStyle = dimColor;
@@ -146,25 +163,34 @@ export function createGrid(elements: GridElements, options: GridOptions) {
     context.fillStyle = jdpColor;
     context.fill();
 
-    // Outlines mark tiny SV2 / JDP cells and keep each cell at its original position and size.
+    // Outlines mark tiny SV2 / JD cells (circles for SV2, diamonds for JD so color is not the only cue).
     if (markers.length > 0) {
       const radius = MARKER_RADIUS * ratio;
-      const drawRings = (subset: typeof markers, color: string) => {
+      const drawMarkers = (subset: typeof markers, color: string, diamond: boolean) => {
         if (subset.length === 0) return;
         context.beginPath();
         for (const { x, y } of subset) {
-          context.moveTo(x + radius, y);
-          context.arc(x, y, radius, 0, 2 * Math.PI);
+          if (diamond) {
+            const d = radius * 1.15;
+            context.moveTo(x, y - d);
+            context.lineTo(x + d, y);
+            context.lineTo(x, y + d);
+            context.lineTo(x - d, y);
+            context.closePath();
+          } else {
+            context.moveTo(x + radius, y);
+            context.arc(x, y, radius, 0, 2 * Math.PI);
+          }
         }
         context.strokeStyle = background;
-        context.lineWidth = 3 * ratio;
+        context.lineWidth = 3.5 * ratio;
         context.stroke();
         context.strokeStyle = color;
-        context.lineWidth = 1.25 * ratio;
+        context.lineWidth = 1.6 * ratio;
         context.stroke();
       };
-      drawRings(markers.filter((m) => !m.jdp), accent);
-      drawRings(markers.filter((m) => m.jdp), jdpColor);
+      drawMarkers(markers.filter((m) => !m.jdp), accent, false);
+      drawMarkers(markers.filter((m) => m.jdp), jdpColor, true);
     }
     context.restore();
 

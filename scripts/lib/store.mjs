@@ -1,6 +1,7 @@
 // The stored data: one compact file with every block since the start height (chain.json),
 // one small file with only what the first paint needs (summary.json), and a rich per-SV2-block
 // file for the full blocks table (sv2-blocks.json).
+import { coinbaseUtf8Runs } from './detect.mjs';
 
 export const FORMAT = 1;
 export const WINDOWS = { '24H': 86400, '1W': 7 * 86400, '1M': 30 * 86400 };
@@ -123,6 +124,7 @@ export function buildSv2Blocks(chain, overrides, { now, synced }) {
     const reward = chain.x[index] + sub;
     const details = chain.details.get(height) ?? {};
     const fees = typeof details.totalFees === 'number' ? details.totalFees : Math.max(0, chain.x[index]);
+    const decodedTag = details.coinbaseRaw ? coinbaseUtf8Runs(details.coinbaseRaw).join(' ').trim().slice(0, 80) : '';
     return {
       h: height,
       id: chain.ids.get(height) ?? '',
@@ -134,7 +136,7 @@ export function buildSv2Blocks(chain, overrides, { now, synced }) {
       fees,
       coinbaseAddress: details.coinbaseAddress ?? '',
       reason,
-      tag: details.coinbaseTag || tag,
+      tag: decodedTag || details.coinbaseTag || tag,
       jdp,
       miner,
     };
@@ -192,10 +194,12 @@ const isIntArray = (value, length) => Array.isArray(value) && value.length === l
 function sanitizeDetails(raw) {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const int = (v) => (typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 ? v : null);
+  const coinbaseRaw = typeof raw.coinbaseRaw === 'string' && /^[0-9a-f]*$/i.test(raw.coinbaseRaw) ? raw.coinbaseRaw.slice(0, 400) : '';
   return {
     totalFees: int(raw.totalFees),
     coinbaseAddress: typeof raw.coinbaseAddress === 'string' ? raw.coinbaseAddress.slice(0, 100) : '',
     coinbaseTag: typeof raw.coinbaseTag === 'string' ? raw.coinbaseTag.slice(0, 80) : '',
+    coinbaseRaw,
   };
 }
 

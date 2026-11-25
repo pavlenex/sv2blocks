@@ -78,13 +78,16 @@ export function parseBlock(raw) {
   const pool = extras.pool && typeof extras.pool === 'object' ? extras.pool : {};
   const slug = cleanText(pool.slug, 48).toLowerCase();
   const coinbaseRaw = typeof extras.coinbaseRaw === 'string' && /^[0-9a-f]*$/i.test(extras.coinbaseRaw) ? extras.coinbaseRaw.slice(0, 400) : '';
+  // Decode coinbaseRaw directly as UTF-8 runs; mempool's coinbaseSignatureAscii decodes bytes as
+  // Latin-1, which mangles UTF-8 emoji (e.g. MARA's 🇺🇸🇺🇸) and leaks raw height/extranonce bytes.
   const coinbaseTag =
-    cleanText(extras.coinbaseSignatureAscii, 80) ||
-    coinbaseUtf8Runs(coinbaseRaw).join(' ').trim().slice(0, 80);
+    coinbaseUtf8Runs(coinbaseRaw).join(' ').trim().slice(0, 80) ||
+    cleanText(extras.coinbaseSignatureAscii, 80);
   const details = {
     totalFees: cleanInt(extras.totalFees),
     coinbaseAddress: cleanText(extras.coinbaseAddress, 100),
     coinbaseTag,
+    coinbaseRaw,
   };
   return {
     height,

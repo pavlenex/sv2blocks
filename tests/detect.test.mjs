@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { autoDetect, coinbaseText, compilePatterns, detectionFingerprint, parseJdpTag } from '../scripts/lib/detect.mjs';
+import { parseBlock } from '../scripts/lib/mempool.mjs';
 
 const hex = (text) => Buffer.from(text, 'latin1').toString('hex');
 const regexes = compilePatterns(['sv2', 'stratum ?v2']);
@@ -67,8 +68,25 @@ test('does not flag pool-built templates with empty miner slot (e.g. MARA Sv2/MA
   assert.equal(parseJdpTag(mara977145), null);
   const detected = autoDetect({ coinbaseRaw: mara977145, poolSlug: 'marapool' }, regexes, []);
   assert.equal(detected?.reason, 'tag');
+  assert.equal(detected?.tag, 'Sv2/MARA🇺🇸🇺🇸//');
   assert.equal(detected?.jdp, false);
   assert.equal(detected?.miner, '');
+
+  // parseBlock prefers UTF-8 decoding of coinbaseRaw over mempool's Latin-1 coinbaseSignatureAscii.
+  const parsed = parseBlock({
+    height: 977145,
+    id: '0'.repeat(64),
+    timestamp: 1795407270,
+    extras: {
+      reward: 314045276,
+      totalFees: 1545276,
+      pool: { name: 'MARA Pool', slug: 'marapool' },
+      coinbaseRaw: mara977145,
+      coinbaseSignatureAscii: 'ùèSv2/MARAð\u009f\u0087ºð\u009f\u0087¸ð\u009f\u0087ºð\u009f\u0087¸//g1zõ',
+    },
+  });
+  assert.equal(parsed.details.coinbaseTag, 'Sv2/MARA🇺🇸🇺🇸//');
+  assert.equal(parsed.details.coinbaseRaw, mara977145);
 
   for (const nonJdp of ['Sv2/MARA//', '/Sv2/PoolX/', '/v2/PoolX/', 'ff7632aa']) {
     const raw = nonJdp === 'ff7632aa' ? nonJdp : `03b6930e${hex(nonJdp)}00ff`;

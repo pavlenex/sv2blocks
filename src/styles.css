@@ -8,7 +8,7 @@
   --bg: #000000;
   --fg: #fafafa;
   --fg-secondary: rgba(250, 250, 250, 0.72);
-  --fg-muted: rgba(250, 250, 250, 0.56);
+  --fg-muted: rgba(250, 250, 250, 0.62);
   --accent: #00d4ff;
   --accent-text: #00d4ff;
   --accent-soft: rgba(0, 212, 255, 0.14);
@@ -20,7 +20,8 @@
   --glass-border: rgba(255, 255, 255, 0.11);
   --glass-border-strong: rgba(255, 255, 255, 0.2);
   --glass-highlight: rgba(255, 255, 255, 0.14);
-  --block-dim: rgba(255, 255, 255, 0.11);
+  --block-dim: rgba(255, 255, 255, 0.3);
+  --block-gap: #050709;
   --control: rgba(255, 255, 255, 0.07);
   --control-active: rgba(255, 255, 255, 0.17);
   --skeleton: rgba(255, 255, 255, 0.07);
@@ -39,19 +40,20 @@
   --bg: #fafafa;
   --fg: #171717;
   --fg-secondary: rgba(23, 23, 23, 0.76);
-  --fg-muted: rgba(23, 23, 23, 0.62);
+  --fg-muted: rgba(23, 23, 23, 0.66);
   --accent: #0891b2;
-  --accent-text: #0e7490;
+  --accent-text: #0c6680;
   --accent-soft: rgba(8, 145, 178, 0.12);
   --jdp: #d97706;
-  --jdp-text: #b45309;
+  --jdp-text: #9a4206;
   --jdp-soft: rgba(217, 119, 6, 0.13);
   --glass: rgba(255, 255, 255, 0.72);
   --glass-hover: rgba(24, 24, 27, 0.045);
   --glass-border: rgba(24, 24, 27, 0.09);
   --glass-border-strong: rgba(24, 24, 27, 0.18);
   --glass-highlight: #ffffff;
-  --block-dim: rgba(24, 24, 27, 0.1);
+  --block-dim: rgba(24, 24, 27, 0.24);
+  --block-gap: #ffffff;
   --control: rgba(24, 24, 27, 0.06);
   --control-active: #ffffff;
   --skeleton: rgba(24, 24, 27, 0.07);
@@ -123,6 +125,39 @@ button {
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 100;
+  padding: 10px 16px;
+  border-radius: var(--radius-pill);
+  background: var(--bg);
+  color: var(--fg);
+  border: 2px solid var(--accent);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-decoration: none;
+  transform: translateY(-200%);
+  transition: transform 120ms ease;
+}
+
+.skip-link:focus-visible {
+  transform: translateY(0);
 }
 
 /* Page */
@@ -391,6 +426,9 @@ button {
 }
 
 .card-action {
+  padding: 6px 8px;
+  margin: -6px -8px;
+  border-radius: var(--radius-sm);
   color: var(--fg-secondary);
   font-size: 12.5px;
   font-weight: 500;
@@ -763,6 +801,12 @@ button {
   background: var(--jdp);
 }
 
+.grid-hint {
+  margin-left: auto;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
 .grid {
   position: relative;
   border-radius: var(--radius-sm);
@@ -779,6 +823,7 @@ button {
   position: absolute;
   border: 2px solid var(--fg);
   border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 1px var(--bg);
   pointer-events: none;
 }
 
@@ -1392,6 +1437,21 @@ a.tile-number[href]:hover::after {
   *::after {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .glass,
+  .seg,
+  .pill-button,
+  .icon-button,
+  .chip,
+  .jdp-badge {
+    border: 1px solid CanvasText;
+  }
+
+  .seg button[aria-pressed='true'] {
+    border: 2px solid Highlight;
   }
 }
 

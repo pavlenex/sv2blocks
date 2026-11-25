@@ -187,13 +187,13 @@ export async function updateData({ argv = process.argv.slice(2), env = process.e
     if (cursor <= tip) await sleep(delayMs);
   }
 
-  // Overridden heights (and any stored SV2 blocks missing hash or coinbase tag) need a block fetch.
+  // Overridden heights (and any stored SV2 blocks missing hash or raw coinbase) need a block fetch.
   const toHydrate = sv2Blocks(chain, overrides)
     .map((b) => b.height)
     .filter((height) => {
       if (height < chain.start || height > chainTip(chain)) return false;
       const details = chain.details.get(height);
-      return !chain.ids.has(height) || !details || !details.coinbaseTag;
+      return !chain.ids.has(height) || !details || !details.coinbaseTag || !details.coinbaseRaw;
     });
   for (let i = 0; i < toHydrate.length; i++) {
     const height = toHydrate[i];

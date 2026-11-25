@@ -421,10 +421,17 @@ $('page-next').addEventListener('click', () => {
 
 $('export-csv').addEventListener('click', exportCsv);
 
+function syncThemeLabel() {
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  $('theme-toggle').setAttribute('aria-label', isLight ? 'Switch to dark theme' : 'Switch to light theme');
+}
+
+syncThemeLabel();
 $('theme-toggle').addEventListener('click', () => {
   const next: Theme = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
   document.documentElement.setAttribute('data-theme', next);
   saved.set('theme', next);
+  syncThemeLabel();
 });
 
 renderControls(null);

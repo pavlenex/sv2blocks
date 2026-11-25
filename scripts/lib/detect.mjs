@@ -91,9 +91,11 @@ export function detectionFingerprint(detection) {
 /** The automatic part of the rule (tag or pool). Overrides are applied later, see store.mjs. */
 export function autoDetect({ coinbaseRaw, poolSlug }, regexes, poolSlugs) {
   const text = coinbaseText(coinbaseRaw);
+  const utf8 = coinbaseUtf8Runs(coinbaseRaw).join(' ').trim();
+  const displayTag = (utf8 || text).slice(0, 80);
   const jdp = parseJdpTag(coinbaseRaw);
-  if (jdp) return { reason: 'tag', tag: (text || jdp.matched).slice(0, 80), jdp: true, miner: jdp.minerTag };
-  if (text && regexes.some((regex) => regex.test(text))) return { reason: 'tag', tag: text.slice(0, 80), jdp: false, miner: '' };
-  if (poolSlug && poolSlugs.includes(poolSlug)) return { reason: 'pool', tag: text.slice(0, 80), jdp: false, miner: '' };
+  if (jdp) return { reason: 'tag', tag: (displayTag || jdp.matched).slice(0, 80), jdp: true, miner: jdp.minerTag };
+  if (text && regexes.some((regex) => regex.test(text))) return { reason: 'tag', tag: displayTag, jdp: false, miner: '' };
+  if (poolSlug && poolSlugs.includes(poolSlug)) return { reason: 'pool', tag: displayTag, jdp: false, miner: '' };
   return null;
 }

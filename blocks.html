@@ -13,6 +13,7 @@
     <link rel="stylesheet" href="/src/blocks.css" />
   </head>
   <body data-loading>
+    <a class="skip-link" href="#blocks-page">Skip to blocks table</a>
     <div class="page">
       <div class="glow glow-a" aria-hidden="true"></div>
       <div class="glow glow-b" aria-hidden="true"></div>
@@ -100,6 +101,7 @@
 
             <div class="table-scroll" id="table-scroll" hidden>
               <table class="data-table">
+                <caption class="sr-only">All tracked Stratum V2 mainnet blocks</caption>
                 <thead>
                   <tr>
                     <th scope="col" aria-sort="descending"><button type="button" class="sort-btn" data-sort="h">Block</button></th>
@@ -115,10 +117,10 @@
               </table>
             </div>
 
-            <p class="empty" id="table-empty" hidden>No Stratum V2 blocks match your filters.</p>
+            <p class="empty" id="table-empty" role="status" aria-live="polite" hidden>No Stratum V2 blocks match your filters.</p>
 
             <div class="pagination" id="pagination" hidden>
-              <p class="page-summary" id="page-summary"></p>
+              <p class="page-summary" id="page-summary" aria-live="polite"></p>
               <div class="page-controls">
                 <label class="page-size-label">
                   <span>Rows</span>
