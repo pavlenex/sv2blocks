@@ -28,7 +28,7 @@ export default defineConfig(async ({ command }) => {
     name: 'sv2blocks-html',
     async transformIndexHtml(source, context) {
       const name = context.path.split('/').pop() || 'index.html';
-      const title = name === 'embeds.html' ? `Embed widgets · ${config.site.title}` : config.site.title;
+      const title = name === 'blocks.html' ? `All SV2 blocks · ${config.site.title}` : config.site.title;
       const page = source
         .replace('<html lang="en">', `<html lang="en" data-default-theme="${escapeHtml(config.site.defaultTheme)}">`)
         .replace(/<title>.*?<\/title>/, `<title>${escapeHtml(title)}</title>`)
@@ -60,12 +60,10 @@ export default defineConfig(async ({ command }) => {
       }
       // The current summary travels inside the page, so the first paint does not wait for a second request.
       // It is inert data (not a script the browser runs); the page still re-checks summary.json afterwards.
-      const summary = name === 'embeds.html' ? null : embeddableJson(await readFile('public/data/summary.json', 'utf8').catch(() => undefined));
+      const summary = name === 'blocks.html' ? null : embeddableJson(await readFile('public/data/summary.json', 'utf8').catch(() => undefined));
       if (summary) tags.push({ tag: 'script', attrs: { type: 'application/json', id: 'summary-data' }, children: summary, injectTo: 'body' });
       // The dev server injects styles inline, so the policy is only added to real builds.
-      // Only the snippets page shows frames, and only this site's own widgets.
-      const policy = name === 'embeds.html' ? `${CSP}; frame-src 'self'` : CSP;
-      if (command === 'build') tags.push({ tag: 'meta', attrs: { 'http-equiv': 'Content-Security-Policy', content: policy }, injectTo: 'head-prepend' });
+      if (command === 'build') tags.push({ tag: 'meta', attrs: { 'http-equiv': 'Content-Security-Policy', content: CSP }, injectTo: 'head-prepend' });
       return { html: page, tags };
     },
   };
@@ -78,8 +76,8 @@ export default defineConfig(async ({ command }) => {
       target: 'es2022',
       sourcemap: false,
       assetsInlineLimit: 0,
-      // index.html is the dashboard, embed.html a single widget for other sites to frame, embeds.html the snippets page.
-      rollupOptions: { input: ['index.html', 'embed.html', 'embeds.html'] },
+      // index.html is the dashboard, blocks.html the full SV2 blocks table, embed.html a single widget for other sites to frame.
+      rollupOptions: { input: ['index.html', 'blocks.html', 'embed.html'] },
     },
     server: { host: '127.0.0.1' },
     preview: { host: '127.0.0.1' },

@@ -1,5 +1,8 @@
 /* sv2blocks design system */
 
+@import '@fontsource-variable/inter/wght.css';
+@import '@fontsource-variable/jetbrains-mono/wght.css';
+
 :root,
 [data-theme='dark'] {
   --bg: #000000;
@@ -9,6 +12,9 @@
   --accent: #00d4ff;
   --accent-text: #00d4ff;
   --accent-soft: rgba(0, 212, 255, 0.14);
+  --jdp: #f59e0b;
+  --jdp-text: #fbbf24;
+  --jdp-soft: rgba(245, 158, 11, 0.16);
   --glass: rgba(255, 255, 255, 0.045);
   --glass-hover: rgba(255, 255, 255, 0.08);
   --glass-border: rgba(255, 255, 255, 0.11);
@@ -37,6 +43,9 @@
   --accent: #0891b2;
   --accent-text: #0e7490;
   --accent-soft: rgba(8, 145, 178, 0.12);
+  --jdp: #d97706;
+  --jdp-text: #b45309;
+  --jdp-soft: rgba(217, 119, 6, 0.13);
   --glass: rgba(255, 255, 255, 0.72);
   --glass-hover: rgba(24, 24, 27, 0.045);
   --glass-border: rgba(24, 24, 27, 0.09);
@@ -183,6 +192,11 @@ button {
   align-items: center;
   gap: 10px;
   min-width: 0;
+}
+
+.brand-link {
+  color: inherit;
+  text-decoration: none;
 }
 
 .top-controls {
@@ -374,6 +388,19 @@ button {
   margin-top: var(--space-1);
   color: var(--fg-muted);
   font-size: 12.5px;
+}
+
+.card-action {
+  color: var(--fg-secondary);
+  font-size: 12.5px;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 120ms ease;
+}
+
+.card-action:hover {
+  color: var(--accent-text);
 }
 
 /* Hero */
@@ -681,9 +708,37 @@ button {
 .grid-legend {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-2) var(--space-4);
   color: var(--fg-secondary);
   font-size: 12.5px;
+}
+
+.grid-key-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.legend-help summary {
+  width: 20px;
+  height: 20px;
+}
+
+.legend-help summary span {
+  width: 14px;
+  height: 14px;
+  font-size: 10px;
+}
+
+.legend-help .metric-help-panel {
+  inset-block-start: auto;
+  inset-block-end: calc(100% + 6px);
+  inset-inline-end: auto;
+  inset-inline-start: 0;
+  max-width: 260px;
+  white-space: normal;
+  line-height: 1.4;
 }
 
 .grid-key {
@@ -702,6 +757,10 @@ button {
 
 .grid-key.sv2::before {
   background: var(--accent);
+}
+
+.grid-key.jdp::before {
+  background: var(--jdp);
 }
 
 .grid {
@@ -769,6 +828,11 @@ button {
   color: var(--accent-text);
 }
 
+.tag.jdp {
+  background: var(--jdp-soft);
+  color: var(--jdp-text);
+}
+
 .tip-pool {
   max-width: 240px;
   overflow: hidden;
@@ -825,12 +889,39 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
+.recent-height.is-jdp {
+  color: var(--jdp-text);
+}
+
+.recent-entity {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .recent-pool {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 500;
   color: var(--fg);
+}
+
+.jdp-badge {
+  flex: none;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--jdp-soft);
+  color: var(--jdp-text);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.3;
+  max-width: 112px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .recent-row time {
@@ -1007,33 +1098,6 @@ a.tile-number[href]:hover::after {
   font-family: var(--font-mono);
   font-size: 11.5px;
   font-variant-numeric: tabular-nums;
-}
-
-.footer-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-}
-
-.footer-link {
-  display: inline-flex;
-  align-items: center;
-  min-height: var(--touch-min);
-  padding: 0 16px;
-  border-radius: var(--radius-pill);
-  color: var(--fg-secondary);
-  font-size: 13px;
-  font-weight: 500;
-  text-decoration: none;
-  transition:
-    color 120ms ease,
-    border-color 120ms ease;
-}
-
-.footer-link:hover {
-  color: var(--fg);
-  border-color: var(--glass-border-strong);
 }
 
 .links {

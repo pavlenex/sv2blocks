@@ -1,6 +1,3 @@
-import '@fontsource-variable/inter/wght.css';
-import '@fontsource-variable/jetbrains-mono/wght.css';
-import './styles.css';
 import { createChart } from './chart';
 import { loadChunk, loadSummary, parseSummary } from './data';
 import { fmtAgo, fmtBtc, fmtClock, fmtDay, fmtInt, fmtPercent } from './format';
@@ -86,8 +83,15 @@ const grid = createGrid(
   {
     describe: (info: BlockInfo) => ({
       height: fmtInt(info.height),
-      tag: info.sv2 ? 'SV2' : 'Other',
-      pool: info.state === 'loading' ? 'Loading…' : info.state === 'missing' ? 'Details unavailable' : info.pool,
+      tag: info.jdp ? 'SV2 · JD' : info.sv2 ? 'SV2' : 'Other',
+      pool:
+        info.state === 'loading'
+          ? 'Loading…'
+          : info.state === 'missing'
+            ? 'Details unavailable'
+            : info.jdp && info.miner
+              ? `${info.pool} · Miner: ${info.miner}`
+              : info.pool,
       meta: info.state ? '' : `${fmtBtc(info.reward, 3)} BTC · ${fmtDay(info.time)} ${fmtClock(info.time)}`,
     }),
     open: (info: BlockInfo) => {
@@ -131,18 +135,32 @@ function renderRecentBlocks(inRange: Sv2Block[]) {
     link.rel = 'noopener noreferrer';
 
     const height = document.createElement('span');
-    height.className = 'recent-height';
+    height.className = block.jdp ? 'recent-height is-jdp' : 'recent-height';
     height.textContent = fmtInt(block.h);
+
+    const entity = document.createElement('span');
+    entity.className = 'recent-entity';
     const pool = document.createElement('span');
     pool.className = 'recent-pool';
     pool.textContent = block.pool;
     pool.title = block.pool;
+    entity.append(pool);
+    if (block.jdp) {
+      const badge = document.createElement('span');
+      badge.className = 'jdp-badge';
+      badge.textContent = block.miner ? `JD · ${block.miner}` : 'JD';
+      badge.title = block.miner
+        ? `Job Declaration: block template built by miner "${block.miner}"`
+        : 'Job Declaration: block template built by the miner';
+      entity.append(badge);
+    }
+
     const date = new Date(block.t * 1000);
     const time = document.createElement('time');
     time.dateTime = date.toISOString();
     time.textContent = blockDate.format(date);
 
-    link.append(height, pool, time);
+    link.append(height, entity, time);
     item.append(link);
     return item;
   }));
@@ -194,10 +212,11 @@ function gridSource(data: Summary, inRange: Sv2Block[], rangeStart: number): Gri
   return {
     count: Math.max(0, data.tip - rangeStart + 1),
     isSv2: (index) => byHeight.has(rangeStart + index),
+    isJdp: (index) => Boolean(byHeight.get(rangeStart + index)?.jdp),
     info: (index) => {
       const height = rangeStart + index;
       const block = byHeight.get(height);
-      if (block) return { height, time: block.t, pool: block.pool, reward: block.reward, sv2: true, id: block.id };
+      if (block) return { height, time: block.t, pool: block.pool, reward: block.reward, sv2: true, jdp: block.jdp, miner: block.miner, id: block.id };
       const details = blockDetails(data, height);
       if (typeof details === 'string') return { height, time: 0, pool: '', reward: 0, sv2: false, id: '', state: details };
       return { height, ...details, sv2: false, id: '' };
@@ -211,9 +230,10 @@ function renderLatest(data: Summary) {
   if (latest) {
     latestLink.textContent = fmtInt(latest.h);
     latestLink.href = blockUrl(latest.h, latest.id);
-    $('latest-meta').textContent = `${latest.pool} · ${fmtAgo(latest.t, Math.floor(Date.now() / 1000))}`;
+    const jdpLabel = latest.jdp ? ` · JD${latest.miner ? ` (${latest.miner})` : ''}` : '';
+    $('latest-meta').textContent = `${latest.pool}${jdpLabel} · ${fmtAgo(latest.t, Math.floor(Date.now() / 1000))}`;
   } else {
-    latestLink.textContent = '–';
+    latestLink.textContent = '-';
     latestLink.removeAttribute('href');
     $('latest-meta').textContent = '';
   }
@@ -280,13 +300,13 @@ function render() {
   const entering = key !== shownKey;
   if (!entering) for (const id of ['board-list', 'recent-list']) $(id).classList.remove('is-entering');
 
-  const indexed = data.tip >= data.start
-    ? `Indexed through block ${fmtInt(data.tip)}`
-    : `Tracking starts at block ${fmtInt(data.start)}`;
-  $('indexed-tip').textContent = data.synced === false ? `Backfill incomplete · ${indexed}` : indexed;
+  const blockRange = data.tip >= data.start
+    ? `Blocks ${fmtInt(data.start)} - ${fmtInt(data.tip)}`
+    : `Tracking from block ${fmtInt(data.start)}`;
+  $('indexed-tip').textContent = data.synced === false ? `Syncing · ${blockRange}` : blockRange;
   const indexedTime = $<HTMLTimeElement>('indexed-time');
   indexedTime.dateTime = new Date(data.updatedAt * 1000).toISOString();
-  indexedTime.textContent = `${fmtDay(data.updatedAt)} at ${fmtClock(data.updatedAt)}`;
+  indexedTime.textContent = `${fmtDay(data.updatedAt)}, ${fmtClock(data.updatedAt)}`;
   $('data-freshness').hidden = false;
 
   tweenNumber($('total'), total, (value) => fmtInt(Math.round(value)));
@@ -296,6 +316,9 @@ function render() {
   $('delta').textContent = `${fmtInt(delta)} ${delta === 1 ? 'block' : 'blocks'}`;
   $('delta').classList.toggle('flat', delta === 0);
   $('range-text').textContent = words;
+
+  const jdpCount = inRange.filter((block) => block.jdp).length;
+  $('grid-key-jdp').hidden = jdpCount === 0;
 
   const { model, ticks } = chartInput(data, state.range, inRange);
   $('chart-wrap').hidden = false;

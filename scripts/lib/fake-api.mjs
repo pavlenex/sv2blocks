@@ -5,9 +5,9 @@ import http from 'node:http';
 import { subsidy } from './store.mjs';
 
 const POOLS = ['Pool A', 'Pool B', 'Pool C', 'Pool D', 'Pool E', 'Pool F', 'Pool G', 'Pool H'];
-const SV2_POOLS = ['DMND', 'Pool B', 'Pool C', 'Pool D', 'Pool E'];
-const SV2_SHARES = [0.46, 0.7, 0.85, 0.95, 1];
-const SV2_TAGS = ['/Stratum V2/', '/sv2/', 'Mined with StratumV2'];
+const SV2_POOLS = ['MARA Pool', 'DMND', 'Pool B', 'Pool C', 'Pool D'];
+const SV2_SHARES = [0.46, 0.68, 0.84, 0.94, 1];
+const SV2_TAGS = ['Sv2/MARA//', '/Stratum V2/', '/sv2/', 'Sv2/DMND/GM/', 'Sv2/PoolB/HomeMiner/'];
 
 const toHex = (text) => Buffer.from(text, 'latin1').toString('hex');
 const unit = (seed) => createHash('sha256').update(seed).digest().readUInt32BE(0) / 2 ** 32;
@@ -42,6 +42,7 @@ export function createFakeApi({ start, tip, tipTime = Math.floor(Date.now() / 10
       extras: {
         reward: subsidy(height) + fees,
         totalFees: fees,
+        coinbaseAddress: `bc1q${createHash('sha256').update(`addr:${poolName}`).digest('hex').slice(0, 38)}`,
         coinbaseRaw: `03${height.toString(16).padStart(6, '0')}${coinbase}`,
         pool: { id: 1, name: poolName, slug: slugOf(poolName) },
       },

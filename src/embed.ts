@@ -4,10 +4,6 @@
 // Options: theme=dark|light|auto, range=24h|1w|1m|all, unit=btc|usd, rows=1..10, link=0.
 // Messages: the widget sends sv2blocks:ready and sv2blocks:height to the page, and accepts sv2blocks:theme.
 // Like the dashboard, it reads only this site's own data files and never turns text into HTML.
-import '@fontsource-variable/inter/wght.css';
-import '@fontsource-variable/jetbrains-mono/wght.css';
-import './styles.css';
-import './embed.css';
 import { boardItems, boardRows } from './board';
 import { createChart } from './chart';
 import { loadSummary, parseSummary } from './data';

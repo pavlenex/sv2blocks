@@ -24,7 +24,7 @@ import { ROOT, loadConfig, loadOverrides } from './lib/config.mjs';
 import { autoDetect, compilePatterns, detectionFingerprint } from './lib/detect.mjs';
 import { HttpError, PAGE_SIZE, createClient, fetchWithRetry } from './lib/mempool.mjs';
 import { fetchPrice } from './lib/price.mjs';
-import { appendBlock, buildSummary, chunkCount, chainTip, decodeChain, emptyChain, encodeChain, encodeChunk, truncateChain } from './lib/store.mjs';
+import { appendBlock, buildSummary, buildSv2Blocks, chunkCount, chainTip, decodeChain, emptyChain, encodeChain, encodeChunk, sv2Blocks, truncateChain } from './lib/store.mjs';
 
 const REORG_DEPTH = PAGE_SIZE; // the newest blocks are always fetched again
 const CHECKPOINT_PAGES = 100;
@@ -136,15 +136,17 @@ export async function updateData({ argv = process.argv.slice(2), env = process.e
   }
   chain ??= emptyChain(startHeight, fingerprint);
 
-  // chain.json is this job's own record (it resumes from it). The site reads summary.json and,
-  // for hover details, the small files under blocks/.
+  // chain.json is this job's own record (it resumes from it). The site reads summary.json,
+  // sv2-blocks.json (full analytics table) and, for hover details, the small files under blocks/.
   const save = async (synced) => {
+    const stamp = now();
     await writeJson(path.join(dataDir, 'chain.json'), encodeChain(chain, overrides));
     await mkdir(path.join(dataDir, 'blocks'), { recursive: true });
     for (let index = 0; index < chunkCount(chain); index++) {
       await writeJson(path.join(dataDir, 'blocks', `${index}.json`), encodeChunk(chain, index));
     }
-    await writeJson(path.join(dataDir, 'summary.json'), buildSummary(chain, overrides, { now: now(), synced }));
+    await writeJson(path.join(dataDir, 'summary.json'), buildSummary(chain, overrides, { now: stamp, synced }));
+    await writeJson(path.join(dataDir, 'sv2-blocks.json'), buildSv2Blocks(chain, overrides, { now: stamp, synced }));
   };
 
   const tip = await client.tipHeight();
@@ -185,11 +187,24 @@ export async function updateData({ argv = process.argv.slice(2), env = process.e
     if (cursor <= tip) await sleep(delayMs);
   }
 
-  // Overridden heights need a block hash for their link.
-  for (const height of overrides.include) {
-    if (height < chain.start || height > chainTip(chain) || chain.ids.has(height)) continue;
+  // Overridden heights (and any stored SV2 blocks missing hash or coinbase tag) need a block fetch.
+  const toHydrate = sv2Blocks(chain, overrides)
+    .map((b) => b.height)
+    .filter((height) => {
+      if (height < chain.start || height > chainTip(chain)) return false;
+      const details = chain.details.get(height);
+      return !chain.ids.has(height) || !details || !details.coinbaseTag;
+    });
+  for (let i = 0; i < toHydrate.length; i++) {
+    const height = toHydrate[i];
     const block = (await client.blocksEndingAt(height)).get(height);
-    if (block) chain.ids.set(height, block.id);
+    if (block) {
+      chain.ids.set(height, block.id);
+      if (block.details) chain.details.set(height, block.details);
+      const detected = autoDetect(block, regexes, poolSlugs);
+      if (detected) chain.auto.set(height, detected);
+    }
+    if (i + 1 < toHydrate.length) await sleep(delayMs);
   }
 
   try {

@@ -22,6 +22,25 @@ export interface Sv2Block {
   reward: number;
   reason: string;
   tag: string;
+  /** True when the block used Stratum V2 Job Declaration Protocol (miner-built template). */
+  jdp?: boolean;
+  /** Miner coinbase tag declared via JDP (e.g. "GM" from Sv2/DMND/GM/). */
+  miner?: string;
+}
+
+export interface Sv2BlockDetail extends Sv2Block {
+  subsidy: number;
+  fees: number;
+  coinbaseAddress: string;
+}
+
+export interface Sv2BlocksData {
+  updatedAt: number;
+  start: number;
+  tip: number;
+  synced?: boolean;
+  price: Price | null;
+  blocks: Sv2BlockDetail[];
 }
 
 export interface Price {
@@ -59,6 +78,8 @@ export interface BlockInfo {
   pool: string;
   reward: number;
   sv2: boolean;
+  jdp?: boolean;
+  miner?: string;
   id: string;
   /** Set while a block's details are still being fetched, or could not be. */
   state?: 'loading' | 'missing';

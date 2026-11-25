@@ -9,6 +9,7 @@
     <title>sv2blocks</title>
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
     <script src="./theme-init.js"></script>
+    <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body data-loading>
     <div class="page">
@@ -54,7 +55,7 @@
                   <p class="metric-help-panel" id="tracked-scope"></p>
                 </details>
               </div>
-              <p class="hero-number" id="total">–</p>
+              <p class="hero-number" id="total">-</p>
               <p class="hero-change" id="hero-change" hidden>
                 <span class="chip" id="delta"></span>
                 <span id="range-text"></span>
@@ -62,7 +63,7 @@
               <p class="status" id="status" role="status" hidden></p>
             </div>
             <div class="skeleton skeleton-chart" aria-hidden="true">
-              <svg viewBox="0 0 1000 300" preserveAspectRatio="none">
+              <svg viewBox="0 0 1000 300" preserveAspectRatio="none" fill="none">
                 <path class="skeleton-guides" d="M0 14H1000M0 153H1000M0 292H1000" vector-effect="non-scaling-stroke" />
                 <path class="skeleton-curve" d="M0 292C250 286 430 268 570 212S830 66 1000 14" vector-effect="non-scaling-stroke" />
               </svg>
@@ -92,7 +93,7 @@
               <h2 class="tile-label" id="latest-title">Latest Stratum V2 block</h2>
             </div>
             <div class="tile-body">
-              <a class="tile-number" id="latest-height" target="_blank" rel="noopener noreferrer">–</a>
+              <a class="tile-number" id="latest-height" target="_blank" rel="noopener noreferrer">-</a>
               <p class="tile-caption" id="latest-meta"></p>
             </div>
           </section>
@@ -108,7 +109,7 @@
                 </div>
               </details>
             </div>
-            <p class="tile-number" id="share">–</p>
+            <p class="tile-number" id="share">-</p>
           </section>
 
           <div class="dashboard-rail">
@@ -136,6 +137,7 @@
               <section class="card glass recent-card" id="recent-blocks" aria-labelledby="recent-title">
                 <div class="card-head">
                   <h2 class="card-title" id="recent-title">Recent SV2 blocks</h2>
+                  <a class="card-action" href="./blocks.html">View all →</a>
                 </div>
                 <div class="skeleton skeleton-rows skeleton-recent" aria-hidden="true">
                   <div><span></span><span></span><span></span></div>
@@ -171,7 +173,17 @@
                     <div class="tip-meta" id="tip-meta"></div>
                   </div>
                 </div>
-                <p class="grid-legend"><span class="grid-key sv2">Stratum V2</span><span class="grid-key">Other blocks</span></p>
+                <div class="grid-legend">
+                  <span class="grid-key sv2">Stratum V2</span>
+                  <span class="grid-key-group" id="grid-key-jdp" hidden>
+                    <span class="grid-key jdp" title="Job Declaration: block template built by the miner">Stratum V2 JD</span>
+                    <details class="metric-help legend-help">
+                      <summary aria-label="What is Stratum V2 JD?"><span aria-hidden="true">i</span></summary>
+                      <p class="metric-help-panel">Job Declaration: a block template built by the miner instead of the pool.</p>
+                    </details>
+                  </span>
+                  <span class="grid-key">Other blocks</span>
+                </div>
               </div>
               <p class="empty" id="grid-status" role="status" hidden></p>
             </div>
@@ -183,10 +195,7 @@
             <span id="indexed-tip"></span>
             <span>Updated <time id="indexed-time"></time></span>
           </p>
-          <div class="footer-actions">
-            <a class="footer-link glass" href="./embeds.html">Embeds</a>
-            <div class="links" id="links"></div>
-          </div>
+          <div class="links" id="links"></div>
         </footer>
       </div>
     </div>

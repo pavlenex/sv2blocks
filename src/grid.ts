@@ -12,6 +12,7 @@ const MARKER_RADIUS = 4; // CSS pixels
 export interface GridSource {
   count: number;
   isSv2(index: number): boolean;
+  isJdp?(index: number): boolean;
   info(index: number): BlockInfo;
 }
 
@@ -69,7 +70,7 @@ export function createGrid(elements: GridElements, options: GridOptions) {
   const context = elements.canvas.getContext('2d');
   let source: GridSource = { count: 0, isSv2: () => false, info: () => ({ height: 0, time: 0, pool: '', reward: 0, sv2: false, id: '' }) };
   let layout: Layout | null = null;
-  let markers: { index: number; x: number; y: number }[] = [];
+  let markers: { index: number; x: number; y: number; jdp: boolean }[] = [];
   let selected = -1;
   let selectedBeforeTouch = -1;
 
@@ -95,6 +96,7 @@ export function createGrid(elements: GridElements, options: GridOptions) {
     const styles = getComputedStyle(document.documentElement);
     const dimColor = styles.getPropertyValue('--block-dim').trim() || 'rgba(128,128,128,0.2)';
     const accent = styles.getPropertyValue('--accent').trim() || '#00d4ff';
+    const jdpColor = styles.getPropertyValue('--jdp').trim() || '#f59e0b';
     const background = styles.getPropertyValue('--bg').trim() || '#000000';
     const { size, cols, offsetX } = layout;
     const rounded = size >= ROUNDED_FROM && typeof context.roundRect === 'function';
@@ -124,29 +126,45 @@ export function createGrid(elements: GridElements, options: GridOptions) {
     context.fillStyle = dimColor;
     context.fill();
 
+    // Standard SV2 blocks (cyan).
     context.beginPath();
     for (let index = 0; index < source.count; index++) {
-      if (!source.isSv2(index)) continue;
+      if (!source.isSv2(index) || source.isJdp?.(index)) continue;
       trace(index, rounded ? gap : 0);
-      if (markSmallCells) markers.push({ index, ...cellCenter(current, index) });
+      if (markSmallCells) markers.push({ index, ...cellCenter(current, index), jdp: false });
     }
     context.fillStyle = accent;
     context.fill();
 
-    // Outlines mark tiny SV2 cells and keep each cell at its original position and size.
+    // Job Declaration Protocol (JDP) blocks (amber).
+    context.beginPath();
+    for (let index = 0; index < source.count; index++) {
+      if (!source.isSv2(index) || !source.isJdp?.(index)) continue;
+      trace(index, rounded ? gap : 0);
+      if (markSmallCells) markers.push({ index, ...cellCenter(current, index), jdp: true });
+    }
+    context.fillStyle = jdpColor;
+    context.fill();
+
+    // Outlines mark tiny SV2 / JDP cells and keep each cell at its original position and size.
     if (markers.length > 0) {
       const radius = MARKER_RADIUS * ratio;
-      context.beginPath();
-      for (const { x, y } of markers) {
-        context.moveTo(x + radius, y);
-        context.arc(x, y, radius, 0, 2 * Math.PI);
-      }
-      context.strokeStyle = background;
-      context.lineWidth = 3 * ratio;
-      context.stroke();
-      context.strokeStyle = accent;
-      context.lineWidth = 1.25 * ratio;
-      context.stroke();
+      const drawRings = (subset: typeof markers, color: string) => {
+        if (subset.length === 0) return;
+        context.beginPath();
+        for (const { x, y } of subset) {
+          context.moveTo(x + radius, y);
+          context.arc(x, y, radius, 0, 2 * Math.PI);
+        }
+        context.strokeStyle = background;
+        context.lineWidth = 3 * ratio;
+        context.stroke();
+        context.strokeStyle = color;
+        context.lineWidth = 1.25 * ratio;
+        context.stroke();
+      };
+      drawRings(markers.filter((m) => !m.jdp), accent);
+      drawRings(markers.filter((m) => m.jdp), jdpColor);
     }
     context.restore();
 
@@ -201,7 +219,8 @@ export function createGrid(elements: GridElements, options: GridOptions) {
     const words = options.describe(info);
     elements.tipHeight.textContent = words.height;
     elements.tipTag.textContent = words.tag;
-    elements.tipTag.classList.toggle('sv2', info.sv2);
+    elements.tipTag.classList.toggle('sv2', info.sv2 && !info.jdp);
+    elements.tipTag.classList.toggle('jdp', Boolean(info.jdp));
     elements.tipPool.textContent = words.pool;
     elements.tipMeta.textContent = words.meta;
     elements.tip.hidden = false;

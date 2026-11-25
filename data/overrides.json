@@ -1,4 +1,7 @@
 {
   "include": [955318],
-  "exclude": []
+  "exclude": [],
+  "jdp": {
+    "955318": "GM"
+  }
 }

@@ -57,10 +57,14 @@ DEFAULT_MEMPOOL = "https://mempool.space"
 DEFAULT_TWEET_API = "https://api.x.com/2/tweets"
 DEFAULT_TELEGRAM_API = "https://api.telegram.org"
 DEFAULT_TEMPLATE = (
-    "Stratum V2 block #{height} mined by\n"
-    "{pool}\n"
-    "\n"
-    "Subsidy + fees: {reward} BTC"
+    "⛏️ New Stratum V2 block #{height}\n"
+    "🟧 Mined by {pool}\n"
+    "💰 Subsidy + fees: {reward} BTC"
+)
+DEFAULT_JDP_TEMPLATE = (
+    "⛏️ New Stratum V2 block #{height} · JD\n"
+    "🟧 Pool: {pool} · Miner: {miner}\n"
+    "💰 Subsidy + fees: {reward} BTC"
 )
 DEFAULT_SEED_COUNTS = "MARA Pool:7"
 DEFAULT_SEED_HEIGHT = 977316
@@ -210,8 +214,67 @@ def classify(runs: list[str]) -> dict[str, Any]:
     }
 
 
+# Stratum V2 Job Declaration coinbase convention (stratum-mining/stratum#2141):
+#   Sv2/<pool_tag>/<miner_tag>/  (non-empty miner_tag indicates Job Declaration)
+# Bare "v2/<pool_tag>/<miner_tag>/" requires the trailing slash to avoid random binary false hits.
+JDP_SV2_RE = re.compile(r"(?i)(?:^|/)(?:stratum ?v2|sv2)/([^/\s][^/]{0,31})/([^/\s][^/]{0,31})(?:/|$)")
+JDP_V2_RE = re.compile(r"(?i)(?:^|/)v2/([^/\s][^/]{0,31})/([^/\s][^/]{0,31})/")
+
+
+def utf8_runs(raw_hex: str) -> list[str]:
+    """Decode valid printable UTF-8 runs from coinbase hex (keeping emoji pool tags intact)."""
+    if not raw_hex:
+        return []
+    raw_hex = raw_hex.strip()
+    if len(raw_hex) % 2:
+        return []
+    try:
+        text = bytes.fromhex(raw_hex).decode("utf-8", errors="replace")
+    except ValueError:
+        return []
+    runs: list[str] = []
+    cur: list[str] = []
+    for ch in text:
+        code = ord(ch)
+        if code >= 0x20 and code != 0x7F and ch != "\uFFFD" and not (0x80 <= code <= 0x9F):
+            cur.append(ch)
+        else:
+            if len(cur) >= 3:
+                runs.append("".join(cur))
+            cur = []
+    if len(cur) >= 3:
+        runs.append("".join(cur))
+    return runs
+
+
+def parse_jdp_tag(raw_hex: str) -> Optional[tuple[str, str, str]]:
+    """Return (pool_tag, miner_tag, matched) for Sv2/<pool>/<miner>/ tags, else None."""
+    for run in utf8_runs(raw_hex):
+        m = JDP_SV2_RE.search(run) or JDP_V2_RE.search(run)
+        if not m:
+            continue
+        pool_tag = m.group(1).strip()[:32]
+        miner_tag = m.group(2).strip()[:32]
+        if pool_tag and miner_tag:
+            return pool_tag, miner_tag, m.group(0)[:80]
+    return None
+
+
 def is_sv2_coinbase(raw_hex: str) -> tuple[bool, Optional[str], dict[str, Any]]:
     cls = classify(ascii_runs(raw_hex))
+    jdp = parse_jdp_tag(raw_hex)
+    if jdp is not None:
+        _pool_tag, miner_tag, matched = jdp
+        cls["counted"] = True
+        cls["borderline"] = False
+        cls["borderline_why"] = None
+        cls["jdp"] = True
+        cls["miner"] = miner_tag
+        if not cls.get("matched_text"):
+            cls["matched_text"] = matched
+    else:
+        cls["jdp"] = False
+        cls["miner"] = None
     return bool(cls["counted"]), cls.get("matched_text"), cls
 
 
@@ -367,11 +430,13 @@ def format_tweet(
     tag: Optional[str],
     reward: str,
     include_link: bool,
+    miner: Optional[str] = None,
 ) -> str:
     url = f"https://mempool.space/block/{block_hash}"
     text = template.format(
         pool=pool_display,
         pool_name=pool_name,
+        miner=miner or "",
         when=when,
         height=height,
         nth=ordinal(count),
@@ -1200,26 +1265,50 @@ class Channel:
     include_link: bool
     # Applied to the pool name and coinbase tag, which other people choose.
     escape: Callable[[str], str] = str
+    # Optional template used for Job Declaration Protocol blocks (with a miner tag).
+    jdp_template: Optional[str] = None
     # Set once a send has failed in this run, so the same run does not try this channel again.
     failed: bool = False
 
 
-def channels_from_env(template: str) -> list[Channel]:
+def channels_from_env(template: str, jdp_template: str = DEFAULT_JDP_TEMPLATE) -> list[Channel]:
     """The Telegram, Discord and Nostr channels that are configured. X's template is the default text."""
 
-    def text_for(name: str) -> str:
-        return os.environ.get(name, template).replace("\\n", "\n")
+    def text_for(name: str, fallback: str) -> str:
+        return os.environ.get(name, fallback).replace("\\n", "\n")
 
     channels: list[Channel] = []
     telegram = telegram_from_env()
     if telegram is not None:
-        channels.append(Channel(telegram, text_for("TELEGRAM_TEMPLATE"), env_flag("TELEGRAM_INCLUDE_LINK", True)))
+        channels.append(
+            Channel(
+                telegram,
+                text_for("TELEGRAM_TEMPLATE", template),
+                env_flag("TELEGRAM_INCLUDE_LINK", True),
+                jdp_template=text_for("TELEGRAM_JDP_TEMPLATE", jdp_template),
+            )
+        )
     discord = discord_from_env()
     if discord is not None:
-        channels.append(Channel(discord, text_for("DISCORD_TEMPLATE"), env_flag("DISCORD_INCLUDE_LINK", True), discord_escape))
+        channels.append(
+            Channel(
+                discord,
+                text_for("DISCORD_TEMPLATE", template),
+                env_flag("DISCORD_INCLUDE_LINK", True),
+                discord_escape,
+                jdp_template=text_for("DISCORD_JDP_TEMPLATE", jdp_template),
+            )
+        )
     nostr = nostr_from_env()
     if nostr is not None:
-        channels.append(Channel(nostr, text_for("NOSTR_TEMPLATE"), env_flag("NOSTR_INCLUDE_LINK", True)))
+        channels.append(
+            Channel(
+                nostr,
+                text_for("NOSTR_TEMPLATE", template),
+                env_flag("NOSTR_INCLUDE_LINK", True),
+                jdp_template=text_for("NOSTR_JDP_TEMPLATE", jdp_template),
+            )
+        )
     return channels
 
 
@@ -1481,6 +1570,7 @@ def process(
     overnight_start: int,
     overnight_end: int,
     template: str,
+    jdp_template: str = DEFAULT_JDP_TEMPLATE,
     handles: dict[str, str],
     pools: list[dict[str, Any]],
     include_link: bool,
@@ -1593,23 +1683,27 @@ def process(
         when = when_label(ts, tz, overnight_start, overnight_end)
         slug = ((block.get("extras") or {}).get("pool") or {}).get("slug")
         display = display_pool(name, slug=slug, pools=pools, overrides=handles)
+        miner = cls.get("miner")
+        is_jdp = bool(cls.get("jdp") and miner)
+        active_template = jdp_template if (is_jdp and jdp_template) else template
         try:
             reward = format_reward_btc(block_reward_sats(block, mempool))
+            text = format_tweet(
+                template=active_template,
+                pool_name=name,
+                pool_display=display,
+                height=height,
+                block_hash=block_hash,
+                count=count,
+                when=when,
+                tag=cls.get("matched_text"),
+                reward=reward,
+                include_link=include_link,
+                miner=miner,
+            )
         except Exception:
             counts[name] = count - 1
             raise
-        text = format_tweet(
-            template=template,
-            pool_name=name,
-            pool_display=display,
-            height=height,
-            block_hash=block_hash,
-            count=count,
-            when=when,
-            tag=cls.get("matched_text"),
-            reward=reward,
-            include_link=include_link,
-        )
         if len(text) > MAX_TWEET_LEN:
             # Do not increment-and-forget: roll the count back and stop so
             # a later run can retry after the template is fixed.
@@ -1621,11 +1715,12 @@ def process(
 
         local = datetime.fromtimestamp(ts, tz).strftime("%Y-%m-%d %H:%M %Z")
         log.info(
-            "SV2 block %s by %s at %s tag=%s → %s",
+            "SV2 block %s by %s at %s tag=%s jdp=%s → %s",
             height,
             name,
             local,
             cls.get("matched_text"),
+            is_jdp,
             "dry-run" if dry_run else "post",
         )
         print("----- tweet -----")
@@ -1637,9 +1732,10 @@ def process(
         channel_texts: list[tuple[Channel, str]] = []
         for channel in channels or []:
             label = channel.client.label
+            channel_tpl = channel.jdp_template if (is_jdp and channel.jdp_template) else channel.template
             try:
                 channel_text = format_tweet(
-                    template=channel.template,
+                    template=channel_tpl,
                     pool_name=channel.escape(name),
                     pool_display=channel.escape(name),
                     height=height,
@@ -1649,6 +1745,7 @@ def process(
                     tag=channel.escape(cls.get("matched_text") or "Sv2"),
                     reward=reward,
                     include_link=channel.include_link,
+                    miner=channel.escape(miner) if miner else None,
                 )
                 if len(channel_text) > channel.client.max_len:
                     raise ValueError(f"{len(channel_text)} characters (max {channel.client.max_len})")
@@ -1695,6 +1792,7 @@ def process(
             "tweet_id": tweet_id,
             "ts": ts,
             "tag": cls.get("matched_text"),
+            **({"jdp": True, "miner": miner} if is_jdp else {}),
         }
         if not dry_run:
             for channel, channel_text in channel_texts:
@@ -1851,6 +1949,15 @@ def self_test() -> int:
     print("Self-test: coinbase detection")
     check("977145 Sv2/MARA", FIXTURE_977145, True, "Sv2/MARA")
     check("977316 Sv2/MARA", FIXTURE_977316, True, "Sv2/MARA")
+    # MARA uses Sv2/MARA🇺🇸🇺🇸// (empty miner slot) → SV2 pool template, NOT JD.
+    assert is_sv2_coinbase(FIXTURE_977145)[2]["jdp"] is False
+    # Stratum#2141 JD convention: Sv2/<pool>/<miner>/ or v2/<pool>/<miner>/
+    jdp_hex = "03b6930e" + b"Sv2/DMND/GM/".hex() + "00ff"
+    counted, _tag, jdp_cls = is_sv2_coinbase(jdp_hex)
+    assert counted is True and jdp_cls["jdp"] is True and jdp_cls["miner"] == "GM", jdp_cls
+    v2_jdp_hex = "03b6930e" + b"/v2/PoolX/Alice/".hex() + "00ff"
+    counted, _tag, v2_cls = is_sv2_coinbase(v2_jdp_hex)
+    assert counted is True and v2_cls["jdp"] is True and v2_cls["miner"] == "Alice", v2_cls
     # Random extranonce bytes that happen to contain "v2" must not count.
     check("random v2 bytes", "ff7632aa", False)  # 'v2'
     check("slash-delimited bare /v2/", "2f76322f", False)  # /v2/
@@ -1874,12 +1981,32 @@ def self_test() -> int:
         include_link=False,
     )
     expected = (
-        "Stratum V2 block #976280 mined by\n"
-        "@MARA\n"
-        "\n"
-        "Subsidy + fees: 3.161 BTC"
+        "⛏️ New Stratum V2 block #976280\n"
+        "🟧 Mined by @MARA\n"
+        "💰 Subsidy + fees: 3.161 BTC"
     )
     assert sample == expected, repr(sample)
+    jdp_sample = format_tweet(
+        template=DEFAULT_JDP_TEMPLATE,
+        pool_name="DMND",
+        pool_display="DMND",
+        height=977400,
+        block_hash="abc",
+        count=1,
+        when="today",
+        tag="Sv2/DMND/GM/",
+        reward="3.161",
+        include_link=True,
+        miner="GM",
+    )
+    expected_jdp = (
+        "⛏️ New Stratum V2 block #977400 · JD\n"
+        "🟧 Pool: DMND · Miner: GM\n"
+        "💰 Subsidy + fees: 3.161 BTC\n"
+        "\n"
+        "https://mempool.space/block/abc"
+    )
+    assert jdp_sample == expected_jdp, repr(jdp_sample)
     with_link = format_tweet(
         template=DEFAULT_TEMPLATE,
         pool_name="MARA Pool",
@@ -1892,8 +2019,8 @@ def self_test() -> int:
         reward="3.161",
         include_link=True,
     )
-    assert with_link.endswith("https://mempool.space/block/abc")
-    print("  [ok] reward formatting and default tweet template")
+    assert with_link.endswith("\n\nhttps://mempool.space/block/abc")
+    print("  [ok] reward formatting and default/JD tweet templates")
 
     # Tagging rules: only high-confidence type=pool handles are mentioned.
     fixtures = [
@@ -2349,9 +2476,8 @@ def run_once(args: argparse.Namespace) -> int:
         tz = ZoneInfo(tz_name)
         overnight_start = int(os.environ.get("OVERNIGHT_START", "0"))
         overnight_end = int(os.environ.get("OVERNIGHT_END", "7"))
-        template = os.environ.get("TWEET_TEMPLATE", DEFAULT_TEMPLATE)
-        # Honour literal \n in a .env template.
-        template = template.replace("\\n", "\n")
+        template = os.environ.get("TWEET_TEMPLATE", DEFAULT_TEMPLATE).replace("\\n", "\n")
+        jdp_template = os.environ.get("TWEET_JDP_TEMPLATE", DEFAULT_JDP_TEMPLATE).replace("\\n", "\n")
         handles = parse_pairs(os.environ.get("POOL_HANDLES", DEFAULT_POOL_HANDLES))
         pools_path = Path(
             args.pools_file
@@ -2369,7 +2495,7 @@ def run_once(args: argparse.Namespace) -> int:
         seed_counts = parse_seed_counts(os.environ.get("SV2_SEED_COUNTS", DEFAULT_SEED_COUNTS))
         seed_height = int(os.environ.get("SV2_SEED_HEIGHT", str(DEFAULT_SEED_HEIGHT)))
 
-        channels = channels_from_env(template)
+        channels = channels_from_env(template, jdp_template)
         save = not args.no_save_state
         # Blocks an earlier run could not get onto Telegram or Discord go out first.
         if not dry_run:
@@ -2388,6 +2514,7 @@ def run_once(args: argparse.Namespace) -> int:
             overnight_start=overnight_start,
             overnight_end=overnight_end,
             template=template,
+            jdp_template=jdp_template,
             handles=handles,
             pools=pools,
             include_link=include_link,

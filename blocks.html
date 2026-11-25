@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="description" content="__DESCRIPTION__" />
+    <title>All SV2 blocks · sv2blocks</title>
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <script src="./theme-init.js"></script>
+    <link rel="stylesheet" href="/src/styles.css" />
+    <link rel="stylesheet" href="/src/blocks.css" />
+  </head>
+  <body data-loading>
+    <div class="page">
+      <div class="glow glow-a" aria-hidden="true"></div>
+      <div class="glow glow-b" aria-hidden="true"></div>
+      <div class="wrap wrap-wide">
+        <header class="top">
+          <a class="brand brand-link" href="./">
+            <svg class="mark" aria-hidden="true" width="24" height="24" viewBox="0 0 24 24">
+              <rect class="mark-dim" x="2" y="2" width="9" height="9" rx="2.5" />
+              <rect class="mark-lit" x="13" y="2" width="9" height="9" rx="2.5" />
+              <rect class="mark-dim" x="2" y="13" width="9" height="9" rx="2.5" />
+              <rect class="mark-dim" x="13" y="13" width="9" height="9" rx="2.5" />
+            </svg>
+            <span class="wordmark" id="site-title">sv2blocks</span>
+          </a>
+          <div class="top-controls">
+            <a class="pill-button glass" href="./">← Dashboard</a>
+            <button type="button" class="icon-button glass" id="theme-toggle" aria-label="Switch colour theme">
+              <svg class="icon-sun" aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+                <circle cx="12" cy="12" r="4" />
+                <path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6" />
+              </svg>
+              <svg class="icon-moon" aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20.5 13.2A8.5 8.5 0 1 1 10.8 3.5a6.6 6.6 0 0 0 9.7 9.7z" />
+              </svg>
+            </button>
+          </div>
+        </header>
+
+        <main class="blocks-page" id="blocks-page" aria-busy="true">
+          <div class="blocks-page-head">
+            <h1>Stratum V2 blocks</h1>
+            <button type="button" class="pill-button glass" id="export-csv" disabled>Export CSV</button>
+          </div>
+
+          <section class="blocks-stats" aria-label="Summary statistics">
+            <article class="card glass tile">
+              <div class="metric-heading"><h2 class="tile-label">Total blocks</h2></div>
+              <div class="tile-body">
+                <p class="tile-number" id="stat-count">-</p>
+              </div>
+            </article>
+            <article class="card glass tile">
+              <div class="metric-heading"><h2 class="tile-label">Total revenue</h2></div>
+              <div class="tile-body">
+                <p class="tile-number" id="stat-revenue">-</p>
+              </div>
+            </article>
+            <article class="card glass tile">
+              <div class="metric-heading"><h2 class="tile-label">Fees captured</h2></div>
+              <div class="tile-body">
+                <p class="tile-number" id="stat-fees">-</p>
+              </div>
+            </article>
+          </section>
+
+          <section class="card glass table-card" aria-label="All Stratum V2 blocks">
+            <div class="table-toolbar">
+              <div class="toolbar-group">
+                <div class="seg" id="filter-template" role="group" aria-label="Template filter">
+                  <button type="button" data-template="all" aria-pressed="true">All</button>
+                  <button type="button" data-template="jdp" aria-pressed="false">JD</button>
+                </div>
+                <select class="field" id="filter-pool" aria-label="Filter by pool">
+                  <option value="">All pools</option>
+                </select>
+              </div>
+              <div class="toolbar-group">
+                <input class="field field-search" id="filter-search" type="search" placeholder="Search height, miner, pool, tag…" aria-label="Search blocks" />
+                <div class="seg seg-unit" id="unit" role="group" aria-label="Currency">
+                  <button type="button" data-unit="BTC" aria-pressed="true">BTC</button>
+                  <button type="button" data-unit="USD" aria-pressed="false">USD</button>
+                </div>
+              </div>
+            </div>
+
+            <p class="status" id="status" role="status" hidden></p>
+
+            <div class="skeleton skeleton-rows" aria-hidden="true">
+              <div><span></span><span></span><span></span></div>
+              <div><span></span><span></span><span></span></div>
+              <div><span></span><span></span><span></span></div>
+              <div><span></span><span></span><span></span></div>
+              <div><span></span><span></span><span></span></div>
+            </div>
+
+            <div class="table-scroll" id="table-scroll" hidden>
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col" aria-sort="descending"><button type="button" class="sort-btn" data-sort="h">Block</button></th>
+                    <th scope="col"><button type="button" class="sort-btn" data-sort="t">Time</button></th>
+                    <th scope="col"><button type="button" class="sort-btn" data-sort="pool">Pool / Miner</button></th>
+                    <th scope="col" class="num"><button type="button" class="sort-btn" data-sort="subsidy">Subsidy</button></th>
+                    <th scope="col" class="num"><button type="button" class="sort-btn" data-sort="fees">Fees</button></th>
+                    <th scope="col" class="num"><button type="button" class="sort-btn" data-sort="reward">Total</button></th>
+                    <th scope="col">Coinbase tag</th>
+                  </tr>
+                </thead>
+                <tbody id="blocks-tbody"></tbody>
+              </table>
+            </div>
+
+            <p class="empty" id="table-empty" hidden>No Stratum V2 blocks match your filters.</p>
+
+            <div class="pagination" id="pagination" hidden>
+              <p class="page-summary" id="page-summary"></p>
+              <div class="page-controls">
+                <label class="page-size-label">
+                  <span>Rows</span>
+                  <select class="field field-compact" id="page-size">
+                    <option value="25" selected>25</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                  </select>
+                </label>
+                <div class="page-buttons">
+                  <button type="button" class="pill-button glass" id="page-prev">Previous</button>
+                  <span class="page-indicator" id="page-indicator"></span>
+                  <button type="button" class="pill-button glass" id="page-next">Next</button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </main>
+
+        <footer class="site-footer">
+          <p class="data-freshness" id="data-freshness" hidden>
+            <span id="indexed-tip"></span>
+            <span>Updated <time id="indexed-time"></time></span>
+          </p>
+          <div class="links" id="links"></div>
+        </footer>
+      </div>
+    </div>
+    <noscript>This page needs JavaScript to display the block table.</noscript>
+    <script type="module" src="/src/blocks.ts"></script>
+  </body>
+</html>

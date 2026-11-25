@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { autoDetect, coinbaseText, compilePatterns, detectionFingerprint } from '../scripts/lib/detect.mjs';
+import { autoDetect, coinbaseText, compilePatterns, detectionFingerprint, parseJdpTag } from '../scripts/lib/detect.mjs';
 
 const hex = (text) => Buffer.from(text, 'latin1').toString('hex');
 const regexes = compilePatterns(['sv2', 'stratum ?v2']);
@@ -42,4 +42,36 @@ test('the fingerprint follows the automatic rule only', () => {
   const base = { coinbasePatterns: ['sv2'], poolSlugs: [] };
   assert.equal(detectionFingerprint(base), detectionFingerprint({ ...base, overridesFile: 'x' }));
   assert.notEqual(detectionFingerprint(base), detectionFingerprint({ ...base, poolSlugs: ['dmnd'] }));
+});
+
+test('detects Job Declaration Protocol tags (Sv2/pool/miner/ and v2/pool/miner/) and extracts miner tag', () => {
+  for (const [tag, expectedMiner] of [
+    ['Sv2/DMND/GM/', 'GM'],
+    ['/SV2/Braiins/Alice/', 'Alice'],
+    ['/sv2/Ocean/HomeMiner', 'HomeMiner'],
+    ['/v2/DMND/GoMining/', 'GoMining'],
+    ['v2/PoolX/Miner-1/', 'Miner-1'],
+  ]) {
+    const raw = `03b6930e${hex(tag)}00ff`;
+    const parsed = parseJdpTag(raw);
+    assert.equal(parsed?.minerTag, expectedMiner, tag);
+    const detected = autoDetect({ coinbaseRaw: raw, poolSlug: 'x' }, regexes, []);
+    assert.equal(detected?.jdp, true, tag);
+    assert.equal(detected?.miner, expectedMiner, tag);
+  }
+});
+
+test('does not flag pool-built templates with empty miner slot (e.g. MARA Sv2/MARA🇺🇸🇺🇸//) as JDP', () => {
+  const mara977145 =
+    '03f9e80e1a5376322f4d415241f09f87baf09f87b8f09f87baf09f87b82f2f140100001600000000000000000000156700317af5';
+  assert.equal(parseJdpTag(mara977145), null);
+  const detected = autoDetect({ coinbaseRaw: mara977145, poolSlug: 'marapool' }, regexes, []);
+  assert.equal(detected?.reason, 'tag');
+  assert.equal(detected?.jdp, false);
+  assert.equal(detected?.miner, '');
+
+  for (const nonJdp of ['Sv2/MARA//', '/Sv2/PoolX/', '/v2/PoolX/', 'ff7632aa']) {
+    const raw = nonJdp === 'ff7632aa' ? nonJdp : `03b6930e${hex(nonJdp)}00ff`;
+    assert.equal(parseJdpTag(raw), null, nonJdp);
+  }
 });

@@ -1,5 +1,6 @@
 // Minimal client for the mempool REST API (https://mempool.space/docs/api/rest).
 // Works with any instance: the base URL comes from sv2blocks.config.json.
+import { coinbaseUtf8Runs } from './detect.mjs';
 
 export const PAGE_SIZE = 15; // GET /v1/blocks/:height returns that block and the 14 before it
 
@@ -59,7 +60,12 @@ function cleanText(value, max) {
   return value.replace(/[\u0000-\u001f\u007f-\u009f]/g, '').trim().slice(0, max);
 }
 
-/** Picks the few fields the site uses out of a mempool block object, rejecting anything malformed. */
+function cleanInt(value, { min = 0, max = Number.MAX_SAFE_INTEGER } = {}) {
+  const num = Number(value);
+  return Number.isSafeInteger(num) && num >= min && num <= max ? num : null;
+}
+
+/** Picks the fields the site uses out of a mempool block object, rejecting anything malformed. */
 export function parseBlock(raw) {
   if (raw === null || typeof raw !== 'object') throw new Error('block is not an object');
   const { height, id, timestamp, extras } = raw;
@@ -72,6 +78,14 @@ export function parseBlock(raw) {
   const pool = extras.pool && typeof extras.pool === 'object' ? extras.pool : {};
   const slug = cleanText(pool.slug, 48).toLowerCase();
   const coinbaseRaw = typeof extras.coinbaseRaw === 'string' && /^[0-9a-f]*$/i.test(extras.coinbaseRaw) ? extras.coinbaseRaw.slice(0, 400) : '';
+  const coinbaseTag =
+    cleanText(extras.coinbaseSignatureAscii, 80) ||
+    coinbaseUtf8Runs(coinbaseRaw).join(' ').trim().slice(0, 80);
+  const details = {
+    totalFees: cleanInt(extras.totalFees),
+    coinbaseAddress: cleanText(extras.coinbaseAddress, 100),
+    coinbaseTag,
+  };
   return {
     height,
     id,
@@ -80,6 +94,7 @@ export function parseBlock(raw) {
     poolSlug: /^[a-z0-9_-]+$/.test(slug) ? slug : 'unknown',
     poolName: cleanText(pool.name, 48) || 'Unknown',
     coinbaseRaw,
+    details,
   };
 }
 

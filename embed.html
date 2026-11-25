@@ -9,6 +9,8 @@
     <title>sv2blocks</title>
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
     <script src="./embed-init.js"></script>
+    <link rel="stylesheet" href="/src/styles.css" />
+    <link rel="stylesheet" href="/src/embed.css" />
   </head>
   <body class="embed" data-loading>
     <!-- One widget per page, chosen with ?widget=blocks or ?widget=leaderboard. See embeds.html. -->
@@ -21,14 +23,14 @@
             <p class="metric-help-panel" id="tracked-scope"></p>
           </details>
         </div>
-        <p class="hero-number" id="total">–</p>
+        <p class="hero-number" id="total">-</p>
         <p class="hero-change" id="hero-change" hidden>
           <span class="chip" id="delta"></span>
           <span id="range-text"></span>
         </p>
       </div>
       <div class="skeleton skeleton-chart" aria-hidden="true">
-        <svg viewBox="0 0 1000 300" preserveAspectRatio="none">
+        <svg viewBox="0 0 1000 300" preserveAspectRatio="none" fill="none">
           <path class="skeleton-guides" d="M0 14H1000M0 153H1000M0 292H1000" vector-effect="non-scaling-stroke" />
           <path class="skeleton-curve" d="M0 292C250 286 430 268 570 212S830 66 1000 14" vector-effect="non-scaling-stroke" />
         </svg>

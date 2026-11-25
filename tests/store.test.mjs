@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { CHUNK_SIZE, appendBlock, buildSummary, chunkCount, decodeChain, emptyChain, encodeChain, encodeChunk, rangeStarts, subsidy, sv2Blocks, truncateChain } from '../scripts/lib/store.mjs';
+import { CHUNK_SIZE, appendBlock, buildSummary, buildSv2Blocks, chunkCount, decodeChain, emptyChain, encodeChain, encodeChunk, rangeStarts, subsidy, sv2Blocks, truncateChain } from '../scripts/lib/store.mjs';
 
 const id = (n) => n.toString(16).padStart(64, '0');
 function sampleChain() {
@@ -37,10 +37,18 @@ test('rejects files whose columns do not line up', () => {
   assert.throws(() => decodeChain({ ...encoded, v: 99 }));
 });
 
-test('overrides add and remove blocks', () => {
+test('overrides add and remove blocks, and apply JDP metadata to summary and sv2-blocks', () => {
   const chain = sampleChain();
-  assert.deepEqual(sv2Blocks(chain, { include: [1005, 99999], exclude: [] }).map((b) => [b.height, b.reason]), [[1003, 'tag'], [1005, 'override']]);
+  assert.deepEqual(sv2Blocks(chain, { include: [1005, 99999], exclude: [], jdp: { 1005: 'GM' } }).map((b) => [b.height, b.reason, b.jdp, b.miner]), [
+    [1003, 'tag', false, ''],
+    [1005, 'override', true, 'GM'],
+  ]);
   assert.deepEqual(sv2Blocks(chain, { include: [1005], exclude: [1003] }).map((b) => b.height), [1005]);
+  const full = buildSv2Blocks(chain, { include: [1005], exclude: [], jdp: { 1005: 'GM' } }, { now: 12000, synced: true });
+  assert.equal(full.blocks.length, 2);
+  assert.equal(full.blocks[1].jdp, true);
+  assert.equal(full.blocks[1].miner, 'GM');
+  assert.equal(full.blocks[1].fees, 1005);
 });
 
 test('blocks must be appended in order, and truncation forgets later blocks', () => {

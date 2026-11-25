@@ -173,7 +173,7 @@ export async function loadOverrides(config) {
   try {
     raw = JSON.parse(await readFile(file, 'utf8'));
   } catch (error) {
-    if (error.code === 'ENOENT') return { include: [], exclude: [] };
+    if (error.code === 'ENOENT') return { include: [], exclude: [], jdp: {} };
     throw new Error(`${config.detection.overridesFile}: could not be read (${error.message})`);
   }
   const clean = (list, label) => {
@@ -183,5 +183,27 @@ export async function loadOverrides(config) {
     }
     return [...new Set(list)].sort((a, b) => a - b);
   };
-  return { include: clean(raw.include, 'include'), exclude: clean(raw.exclude, 'exclude') };
+  const jdp = {};
+  if (raw.jdp !== undefined) {
+    if (Array.isArray(raw.jdp)) {
+      for (const h of raw.jdp) {
+        if (!Number.isInteger(h) || h < 0) throw new Error(`${config.detection.overridesFile}: "jdp" heights must be non-negative integers`);
+        jdp[h] = '';
+      }
+    } else if (isObject(raw.jdp)) {
+      for (const [key, value] of Object.entries(raw.jdp)) {
+        const h = Number(key);
+        if (!Number.isInteger(h) || h < 0 || String(h) !== key) {
+          throw new Error(`${config.detection.overridesFile}: "jdp" key "${key}" must be a block height`);
+        }
+        if (typeof value !== 'string') {
+          throw new Error(`${config.detection.overridesFile}: "jdp.${key}" must be a miner tag string`);
+        }
+        jdp[h] = value.trim().slice(0, 32);
+      }
+    } else {
+      throw new Error(`${config.detection.overridesFile}: "jdp" must be an object or list of block heights`);
+    }
+  }
+  return { include: clean(raw.include, 'include'), exclude: clean(raw.exclude, 'exclude'), jdp };
 }
