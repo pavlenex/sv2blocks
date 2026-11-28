@@ -1,0 +1,270 @@
+{
+  "discord_pending": [],
+  "initialized": true,
+  "last_hash": "00000000000000000000afb28c5823238d7329aac9ec7857e408859d22a09eba",
+  "last_height": 977987,
+  "nostr_pending": [],
+  "pool_counts": {
+    "MARA Pool": 12
+  },
+  "posted": {
+    "000000000000000000006cdec6c4df7d107d0169e18be4d32eca86235759315e": {
+      "count": 10,
+      "discord_id": "1575187198658093168",
+      "height": 977536,
+      "nostr_id": "5add79b11dede6ca890bb4f67c923fbd7e86533d4f85a2e6dff9ab43c8f50862",
+      "pool": "MARA Pool",
+      "tag": "Sv2/MARA",
+      "telegram_id": 6,
+      "ts": 1795623516,
+      "tweet_id": "2125628465168699873"
+    },
+    "00000000000000000000985023033ec246f0a1cadfdeb7213272d298e8d7c426": {
+      "count": 8,
+      "height": 977363,
+      "pool": "MARA Pool",
+      "tag": "Sv2/MARA",
+      "ts": 1795523381,
+      "tweet_id": "2125209426265088310"
+    },
+    "00000000000000000000ad96bb1fd1ab10e1497031e613f595c967befe042972": {
+      "count": 11,
+      "discord_id": "1575508073462890647",
+      "height": 977682,
+      "nostr_id": "afb9c76c0adf2ba7ca76beaa012f4dd53999dcc1f068c7026d5b39a14194960a",
+      "pool": "MARA Pool",
+      "tag": "Sv2/MARA",
+      "telegram_id": 7,
+      "ts": 1795699936,
+      "tweet_id": "2125949340128608434"
+    },
+    "00000000000000000000afb28c5823238d7329aac9ec7857e408859d22a09eba": {
+      "count": 12,
+      "discord_id": "1576342302400450741",
+      "height": 977987,
+      "nostr_id": "1797f230216e3fa1d16f2f0fd01bae86e20f6ccb59091eac07bd4c64787ad599",
+      "pool": "MARA Pool",
+      "tag": "Sv2/MARA",
+      "telegram_id": 8,
+      "ts": 1795899450,
+      "tweet_id": "2126783569146028115"
+    },
+    "0000000000000000000103a57c7e01b5fb4e56860232987585f894b5d69553ff": {
+      "count": 9,
+      "discord_id": "1575036232356995155",
+      "height": 977478,
+      "nostr_id": "5113b5df5c81d4dc5b12658eb0c005a94bc063d5c0410948980442deacf14c92",
+      "pool": "MARA Pool",
+      "tag": "Sv2/MARA",
+      "telegram_id": 5,
+      "ts": 1795588141,
+      "tweet_id": "2125477497852616977"
+    }
+  },
+  "recent": [
+    {
+      "hash": "00000000000000000000a2cb56ff3cafa0921f3d4747fc4da99f9f9a9d956006",
+      "height": 977938
+    },
+    {
+      "hash": "00000000000000000001cbc80dcd38fa9e888cb26a530598dc53a577907731ba",
+      "height": 977939
+    },
+    {
+      "hash": "00000000000000000000d021c72cd8af28685810b9a74551eb0e71a92e88c16d",
+      "height": 977940
+    },
+    {
+      "hash": "00000000000000000000d328bf5059e25be55edc06ef171873f7ee4607a0b682",
+      "height": 977941
+    },
+    {
+      "hash": "000000000000000000007eaf6519ddc600f5e9e57d1239a196912d1df1b12d3c",
+      "height": 977942
+    },
+    {
+      "hash": "00000000000000000001bb9408437dc306178a183391172b526ac2b9c5a80d6e",
+      "height": 977943
+    },
+    {
+      "hash": "00000000000000000000b9e4c388917a8db6dba4052b8369c3fdd050ecb0792a",
+      "height": 977944
+    },
+    {
+      "hash": "000000000000000000004aa79c2cec6da27b69ef73a812bccb825eb52877c599",
+      "height": 977945
+    },
+    {
+      "hash": "00000000000000000001a20d1356bf8130f1b99d14fd59fbdd48c9a5d5c4dceb",
+      "height": 977946
+    },
+    {
+      "hash": "00000000000000000001bfccd360d8ac66d5ea0092406f464da5afba498e2b29",
+      "height": 977947
+    },
+    {
+      "hash": "000000000000000000001b2c1a2819d6047a112eb0a22d134c6457f728807b3c",
+      "height": 977948
+    },
+    {
+      "hash": "00000000000000000000496d24e7f55da8b67a81c4a648be983c3fb3fcdedc19",
+      "height": 977949
+    },
+    {
+      "hash": "00000000000000000000d8f46bc10a429544b5d6ac4ef3e20103081b52c2b7c8",
+      "height": 977950
+    },
+    {
+      "hash": "00000000000000000001c9ab5e89feedf966cbdfbb3f89502993749a34fc25ac",
+      "height": 977951
+    },
+    {
+      "hash": "000000000000000000001a9f83474319c0553c672fee4655ad7b1f16513d5b01",
+      "height": 977952
+    },
+    {
+      "hash": "0000000000000000000016f445e2bf15c1fdb771c9a308a2d9eb5d223f1048ae",
+      "height": 977953
+    },
+    {
+      "hash": "00000000000000000001ef8b28a658328736f4fe9ded995490d6780ea60caef8",
+      "height": 977954
+    },
+    {
+      "hash": "000000000000000000001dcce6a164dfdb101f407e4f567a4e68be26a10e5e11",
+      "height": 977955
+    },
+    {
+      "hash": "00000000000000000001b9766c899f5bb9bf8d1be58d207f7be4b5caabb596a3",
+      "height": 977956
+    },
+    {
+      "hash": "0000000000000000000020b1fed4906988bbcfe80086c372c72c67bf11b04788",
+      "height": 977957
+    },
+    {
+      "hash": "0000000000000000000026c44ac040445836bffd4ae17ef70671c64d7dc4eb75",
+      "height": 977958
+    },
+    {
+      "hash": "000000000000000000009d1cc3a7baf61935a46e9318c47e66ee1d738923a495",
+      "height": 977959
+    },
+    {
+      "hash": "0000000000000000000093945e05ac9fd9e065a4c14e7eaf7824939f750b1211",
+      "height": 977960
+    },
+    {
+      "hash": "00000000000000000001ca8098e97d34f49b3e5e9c1b3d3fd5b9bc0f706c3bb5",
+      "height": 977961
+    },
+    {
+      "hash": "0000000000000000000147ee5ec40c06a8bd8f8f2166400f822b014e2f08c5ad",
+      "height": 977962
+    },
+    {
+      "hash": "00000000000000000000d584166ed6130fa3b013ccf46ea4f88e3ec0c58e99e0",
+      "height": 977963
+    },
+    {
+      "hash": "00000000000000000000d0eae70890a07b5861dad1efe7f63879b75ecd1d5e74",
+      "height": 977964
+    },
+    {
+      "hash": "0000000000000000000039ba26b976fd380954ced735ff65b7f12367de416061",
+      "height": 977965
+    },
+    {
+      "hash": "00000000000000000001ba9c865bb312d25c109847b8713b34e5a95328c07bb7",
+      "height": 977966
+    },
+    {
+      "hash": "00000000000000000000d603881a21a8bba3194b1ea59c4116745dc14aafcb04",
+      "height": 977967
+    },
+    {
+      "hash": "000000000000000000015d98c81cd0c5db3a97bae8f3d755c407c1efb6bb073b",
+      "height": 977968
+    },
+    {
+      "hash": "00000000000000000001a4487d3c9e9809924127d25190de22ae5a8fac455c83",
+      "height": 977969
+    },
+    {
+      "hash": "0000000000000000000192d5a7cdcd9451aee9cc1b3ac54cd68c26d4e5e304c1",
+      "height": 977970
+    },
+    {
+      "hash": "00000000000000000000e68ba5b764b9fa6f4a9fc9900f2ebe679697c4dda0c2",
+      "height": 977971
+    },
+    {
+      "hash": "00000000000000000001ec2875937d7925d62bf8ff9b43c068290691e49214f8",
+      "height": 977972
+    },
+    {
+      "hash": "00000000000000000001d9678cefbcba81347e8a553a688f1ddc3533bf0618a2",
+      "height": 977973
+    },
+    {
+      "hash": "000000000000000000005a748ff279b90addee7a4390fec069d10e5f3cad9503",
+      "height": 977974
+    },
+    {
+      "hash": "00000000000000000001b7bf915c029fcb8d38378e37b12c2e7c800ab7623fb1",
+      "height": 977975
+    },
+    {
+      "hash": "00000000000000000000e1c9036997ed4a8fd153fa1f4bc941990bade1ae6637",
+      "height": 977976
+    },
+    {
+      "hash": "00000000000000000001e7c38b98ad61bbff392a56dd0d6f783ca726412ae1a9",
+      "height": 977977
+    },
+    {
+      "hash": "00000000000000000000f48ee8ed08aba2f336df197353ba578ef32b1e490858",
+      "height": 977978
+    },
+    {
+      "hash": "00000000000000000000ffc0639add75edd16b2d1e4e13575cf7cf8f6e748bf3",
+      "height": 977979
+    },
+    {
+      "hash": "00000000000000000001d4b023d21f484b18bae8b98b97f5823109d59974eea6",
+      "height": 977980
+    },
+    {
+      "hash": "00000000000000000001ef97a7e145082955800c049648c2bebc91ca26af006e",
+      "height": 977981
+    },
+    {
+      "hash": "00000000000000000000a2d3bf62e0433ba39d236b91815df32561f8d9b424aa",
+      "height": 977982
+    },
+    {
+      "hash": "000000000000000000016f3f2246af6246722db008994ed5d2882bea75edbc7d",
+      "height": 977983
+    },
+    {
+      "hash": "00000000000000000001edb6cef88e3e4b6f659551a7977e57ac107771918904",
+      "height": 977984
+    },
+    {
+      "hash": "00000000000000000001acd4ccf8a6cd9ab275cecec9527f284e55fd19a2ba47",
+      "height": 977985
+    },
+    {
+      "hash": "00000000000000000000c901be8030a99829dab3dbbb4896c498d71e290e269c",
+      "height": 977986
+    },
+    {
+      "hash": "00000000000000000000afb28c5823238d7329aac9ec7857e408859d22a09eba",
+      "height": 977987
+    }
+  ],
+  "seed_height": 977316,
+  "seed_rewound": true,
+  "telegram_pending": [],
+  "version": 1
+}
